@@ -45,7 +45,9 @@ int wmain() {
     DWORD Length = 0;
     wchar_t KeepToken[2]{};
     const bool Preserve = GetEnvironmentVariableW(L"QCK_TEST_KEEP_TOKEN", KeepToken, 2) == 1 && KeepToken[0] == L'1';
-    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY, &Token)) return TokenFailure("OpenProcessToken", GetLastError());
+    // CreateRestrictedToken preserves this handle's access mask; the derived
+    // token needs ADJUST_DEFAULT to lower its integrity before it is assigned.
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_ADJUST_DEFAULT, &Token)) return TokenFailure("OpenProcessToken", GetLastError());
     if (!GetTokenInformation(Token, TokenElevation, &Elevated, sizeof(Elevated), &Length)) { const DWORD Error = GetLastError(); CloseHandle(Token); return TokenFailure("TokenElevation", Error); }
     BOOL Started = FALSE;
     if (Elevated.TokenIsElevated && !Preserve) {
