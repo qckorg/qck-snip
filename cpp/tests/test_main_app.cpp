@@ -278,6 +278,7 @@ private slots:
         backdrop.move(screen->geometry().center() - backdrop.rect().center());
         backdrop.setStyleSheet("QPushButton { background: #dd5533; border: none; }");
         backdrop.show();
+        backdrop.raise();
         QVERIFY(QTest::qWaitForWindowExposed(&backdrop));
         ScreenshotCountdown countdown(screen);
         QVERIFY(QTest::qWaitForWindowExposed(&countdown));
@@ -288,12 +289,18 @@ private slots:
         auto pixel = [&](const QPoint &global) { return image.pixelColor(global - rect.topLeft().toPoint()); };
         // Inside the disc and clear of the digit: dark, so the capture does contain the window.
         const QPoint inside = area.topLeft() + QPoint(w / 2, h / 8);
+        // Exposure precedes DWM composition. A dark desktop is not evidence that
+        // the disc has painted; require an independent pixel outside its window.
+        const QPoint ControlPixel = backdrop.geometry().topLeft() + QPoint(scaled(10), scaled(10));
         QElapsedTimer waited;
         waited.start();
         bool drawn = false;
         while (!drawn && waited.elapsed() < 2000) {
             std::tie(image, rect) = CaptureService("mss").capture_all_screens();
-            drawn = pixel(inside).red() < 120;
+            const QColor BackdropPixel = pixel(ControlPixel);
+            const bool BackdropReady = qAbs(BackdropPixel.red() - under.red()) <= 6 &&
+                qAbs(BackdropPixel.green() - under.green()) <= 6 && qAbs(BackdropPixel.blue() - under.blue()) <= 6;
+            drawn = BackdropReady && pixel(inside).red() < 120;
             if (!drawn) QTest::qWait(50);
         }
         QVERIFY2(drawn, qPrintable(pixel(inside).name()));
