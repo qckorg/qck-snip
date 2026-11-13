@@ -19,4 +19,7 @@ $env:CARGO_BUILD_JOBS = "$Jobs"
 & $Cmake --build $BuildDirectory --config $Configuration --target jietuba_cpp qck_policy_check qck_feature_services_tests jietuba_core_tests jietuba_update_tests --parallel $Jobs
 if ($LASTEXITCODE) { throw '[Build:Capture] Compilation failed.' }
 & $Ctest --test-dir $BuildDirectory -C $Configuration --output-on-failure -j 1 -R '^qck_feature_policy$|^qck_features_(disabled|malformed|unavailable)$|^python_core_parity$|^updater$'
-if ($LASTEXITCODE) { throw '[Build:Capture] Service-boundary checks failed.' }
+if ($LASTEXITCODE) {
+    & (Join-Path $PSScriptRoot 'show_failed_tests.ps1') -BuildDir $BuildDirectory -Config $Configuration -NoRerun
+    throw '[Build:Capture] Service-boundary checks failed.'
+}

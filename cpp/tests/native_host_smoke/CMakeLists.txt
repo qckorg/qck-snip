@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.24)
+project(QckNativeHostSmoke NONE)
+enable_testing()
+if(NOT EXISTS "${QckNativeHostProbe}")
+    message(FATAL_ERROR "QckNativeHostProbe must name the compiled production guard probe")
+endif()
+add_test(NAME OrdinaryNativeHost COMMAND "${QckNativeHostProbe}" --allow)

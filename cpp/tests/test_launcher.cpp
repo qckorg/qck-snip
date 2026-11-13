@@ -11,6 +11,28 @@ int TokenFailure(const char* Operation, DWORD Error) {
     std::fprintf(stderr, "[Test:Host] %s failed: %lu\n", Operation, Error);
     return 4;
 }
+bool SetOrdinaryObjectDefaults(HANDLE Token) {
+    // An elevated host can give its default objects only administrator access.
+    // After that group becomes deny-only, a child cannot connect to its own
+    // stdio pipes. Use the actual account as owner and ACL trustee, without
+    // restoring administrator groups or privileges to the restricted token.
+    alignas(TOKEN_USER) BYTE UserBuffer[sizeof(TOKEN_USER) + SECURITY_MAX_SID_SIZE]{};
+    DWORD Length = 0;
+    if (!GetTokenInformation(Token, TokenUser, UserBuffer, sizeof(UserBuffer), &Length)) return false;
+    PSID User = reinterpret_cast<TOKEN_USER*>(UserBuffer)->User.Sid;
+    TOKEN_OWNER Owner{User};
+    if (!SetTokenInformation(Token, TokenOwner, &Owner, sizeof(Owner))) return false;
+    alignas(DWORD) BYTE SystemSid[SECURITY_MAX_SID_SIZE]{};
+    DWORD SidSize = sizeof(SystemSid);
+    if (!CreateWellKnownSid(WinLocalSystemSid, nullptr, SystemSid, &SidSize)) return false;
+    alignas(ACL) BYTE AclBuffer[sizeof(ACL) + 2 * (sizeof(ACCESS_ALLOWED_ACE) + SECURITY_MAX_SID_SIZE)]{};
+    auto* Acl = reinterpret_cast<ACL*>(AclBuffer);
+    if (!InitializeAcl(Acl, sizeof(AclBuffer), ACL_REVISION) ||
+        !AddAccessAllowedAce(Acl, ACL_REVISION, GENERIC_ALL, User) ||
+        !AddAccessAllowedAce(Acl, ACL_REVISION, GENERIC_ALL, SystemSid)) return false;
+    TOKEN_DEFAULT_DACL Defaults{Acl};
+    return SetTokenInformation(Token, TokenDefaultDacl, &Defaults, sizeof(Defaults)) != FALSE;
+}
 // The command line after this program's own path, with the test's quoting intact.
 wchar_t *test_command_line() {
     wchar_t *line = GetCommandLineW();
@@ -60,6 +82,7 @@ int wmain() {
         Label.Label.Sid = Sid;
         Label.Label.Attributes = SE_GROUP_INTEGRITY;
         if (!SetTokenInformation(Restricted, TokenIntegrityLevel, &Label, sizeof(Label) + SidSize)) { const DWORD Error = GetLastError(); CloseHandle(Restricted); CloseHandle(Token); return TokenFailure("TokenIntegrityLevel", Error); }
+        if (!SetOrdinaryObjectDefaults(Restricted)) { const DWORD Error = GetLastError(); CloseHandle(Restricted); CloseHandle(Token); return TokenFailure("OrdinaryObjectDefaults", Error); }
         Started = CreateProcessAsUserW(Restricted, nullptr, command, nullptr, nullptr, TRUE, CREATE_SUSPENDED, nullptr, nullptr, &startup, &process);
         CloseHandle(Restricted);
     } else {

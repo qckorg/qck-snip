@@ -136,7 +136,10 @@ private slots:
             QProcess Child;
             Child.start(Program, Arguments);
             QVERIFY(Child.waitForStarted());
-            QVERIFY(Child.waitForFinished(10000));
+            // The instrumented full application has a cold native-loader cost;
+            // this checks fixed helper exit/no event loop, not startup speed.
+            QVERIFY2(Child.waitForFinished(30000), qPrintable(QString("%1: %2; stderr: %3")
+                .arg(Arguments.join(' '), Child.errorString(), QString::fromLocal8Bit(Child.readAllStandardError()))));
             QCOMPARE(Child.exitStatus(), QProcess::NormalExit);
             QCOMPARE(Child.exitCode(), 1); // Tests inherit the isolated sandbox; no real tasks.
         }

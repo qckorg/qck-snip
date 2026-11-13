@@ -203,3 +203,13 @@ jobs:
       - name: Capture profile build and service checks
         if: always() && steps.build.outcome == 'success'
         run: .\scripts\check_capture_profile.ps1
+
+      - name: Capture test reports
+        if: always() && steps.build.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: capture-test-reports
+          path: |
+            cpp/build/coverage-build/test_reports
+            cpp/build/coverage-build/Testing/Temporary/LastTest.log
+          if-no-files-found: error

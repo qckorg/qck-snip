@@ -28,9 +28,14 @@ try {
     CheckExit 'Ordinary-host control'
     $Collector = Get-ChildItem (Join-Path $VsDirectory 'Common7\IDE\Extensions\Microsoft\CodeCoverage.Console') -Filter 'Microsoft.CodeCoverage.Console.exe' -Recurse | Select-Object -First 1 -ExpandProperty FullName
     if (-not $Collector) { throw '[Test:NativeHost] Native coverage collector required.' }
-    # Start the collector inside the ordinary token so its instrumentation IPC
-    # shares the same authority as the native process it measures.
-    & $Launcher $Collector collect $Probe --allow -s (Join-Path $PSScriptRoot 'coverage.config.xml') -o NativeHostCoverage.xml -f cobertura
+    # Exercise CTest's real child-process pipes as well as coverage before paying
+    # for the full native build. A direct console child alone misses bad ACLs.
+    $Cmake = Join-Path $VsDirectory 'Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
+    $Ctest = Join-Path (Split-Path $Cmake -Parent) 'ctest.exe'
+    $SmokeDirectory = Join-Path $BuildDirectory 'ctest-smoke'
+    & $Cmake -S "$ProjectDirectory\tests\native_host_smoke" -B $SmokeDirectory -G Ninja "-DQckNativeHostProbe=$Probe"
+    CheckExit 'CTest smoke configuration'
+    & $Launcher $Collector collect $Ctest --test-dir $SmokeDirectory --output-on-failure -s (Join-Path $PSScriptRoot 'coverage.config.xml') -o NativeHostCoverage.xml -f cobertura
     CheckExit 'Ordinary-host coverage'
     $Coverage = [xml](Get-Content -LiteralPath NativeHostCoverage.xml -Raw)
     $Covered = @($Coverage.SelectNodes("//class[contains(@filename, 'ocr_security.cpp')]/lines/line[@hits != '0']"))
