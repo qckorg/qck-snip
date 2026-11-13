@@ -72,7 +72,7 @@ $raw = Join-Path $rawDir ("run-{0}.xml" -f @(Get-ChildItem $rawDir -Filter '*.xm
 $ctestArgs = @('--test-dir', $buildDir, '-C', $config, '--output-on-failure', '--timeout', '600', '-j', $Jobs)
 if ($TestFilter) { $ctestArgs += @('-R', $TestFilter) }
 if ($TestExclude) { $ctestArgs += @('-E', $TestExclude) }
-& $console collect $ctest @ctestArgs -o $raw -f cobertura
+& $console collect $ctest @ctestArgs -o $raw -f cobertura -s (Join-Path $PSScriptRoot 'coverage.config.xml')
 $testsFailed = $LASTEXITCODE -ne 0
 if (-not (Test-Path $raw)) { throw 'No coverage report was written.' }
 

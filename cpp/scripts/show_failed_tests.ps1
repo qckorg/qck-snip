@@ -3,7 +3,8 @@
 # 用法（在 cpp 目录下，Qt 的 bin 要能找到）：.\scripts\show_failed_tests.ps1
 param(
     [string]$BuildDir = 'build\coverage-build',
-    [string]$Config = 'RelWithDebInfo'
+    [string]$Config = 'RelWithDebInfo',
+    [switch]$NoRerun
 )
 
 $ErrorActionPreference = 'Stop'
@@ -27,6 +28,7 @@ foreach ($line in Get-Content $failedLog -ErrorAction SilentlyContinue) {
     $firstReport = Join-Path $BuildDir "test_reports\$name.txt"
     Write-Host "===== $name (failed run)"
     Get-Content $firstReport -ErrorAction SilentlyContinue
+    if ($NoRerun) { continue }
     $report = Join-Path $reportDir "$name.txt"
     $testArgs = @($test.command | Select-Object -Skip 1) + @('-o', "$report,txt")
     & $test.command[0] @testArgs | Out-Null

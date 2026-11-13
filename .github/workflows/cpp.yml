@@ -70,7 +70,8 @@ jobs:
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: cpp/native -> ../build/coverage-build/native
-          save-if: ${{ github.ref == 'refs/heads/master2' }}
+          save-if: ${{ github.ref == 'refs/heads/master2' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) }}
+          cache-on-failure: true
 
       - name: Install coverage tools
         if: steps.scope.outputs.code == 'true'
@@ -116,9 +117,19 @@ jobs:
         # Four at a time on the runner's four cores; the clipboard tests take turns (RESOURCE_LOCK).
         run: .\scripts\coverage.ps1 -SkipBuild -Jobs 4 -TestExclude '_desktop$|_windows_parity$'
 
-      # ctest does not show QtTest's own report; run each failed test again with it written to a file.
+      # Print the original QtTest reports without repeating expensive native/desktop suites.
       - if: failure() && steps.tests.outcome == 'failure'
-        run: .\scripts\show_failed_tests.ps1
+        run: .\scripts\show_failed_tests.ps1 -NoRerun
+
+      - name: Functional test reports
+        if: always() && steps.build.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: functional-test-reports
+          path: |
+            cpp/build/coverage-build/test_reports
+            cpp/build/coverage-build/Testing/Temporary/LastTest.log
+          if-no-files-found: error
 
       # Large-scale layout fixtures need room for their minimum window sizes.
       # This changes only the disposable hosted runner's display.
@@ -139,7 +150,17 @@ jobs:
 
       - if: always() && steps.desktop.outcome == 'failure'
         continue-on-error: true
-        run: .\scripts\show_failed_tests.ps1
+        run: .\scripts\show_failed_tests.ps1 -NoRerun
+
+      - name: Complete test reports
+        if: always() && steps.build.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: complete-test-reports
+          path: |
+            cpp/build/coverage-build/test_reports
+            cpp/build/coverage-build/Testing/Temporary/LastTest.log
+          if-no-files-found: error
 
       # A ratchet on the whole of cpp/src: raise it as tests are added, never lower it. Changed
       # lines need 75%, and a changed source file no test runs at all fails.

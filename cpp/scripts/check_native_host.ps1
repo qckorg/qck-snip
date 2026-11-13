@@ -15,7 +15,7 @@ function CheckExit([string]$Step) {
 }
 Push-Location $BuildDirectory
 try {
-    & cl.exe /nologo /EHsc /W4 /MT /std:c++20 /I "$ProjectDirectory\src" "$ProjectDirectory\tests\native_host_probe.cpp" "$ProjectDirectory\src\core\ocr_security.cpp" /Fe:NativeHost.exe /link advapi32.lib
+    & cl.exe /nologo /EHsc /W4 /MT /Z7 /Od /std:c++20 /I "$ProjectDirectory\src" "$ProjectDirectory\tests\native_host_probe.cpp" "$ProjectDirectory\src\core\ocr_security.cpp" /Fe:NativeHost.exe /link /DEBUG /INCREMENTAL:NO advapi32.lib
     CheckExit 'Guard compilation'
     & cl.exe /nologo /EHsc /W4 /MT "$ProjectDirectory\tests\test_launcher.cpp" /Fe:TestLauncher.exe /link advapi32.lib
     CheckExit 'Launcher compilation'
@@ -26,6 +26,14 @@ try {
     $env:QCK_TEST_KEEP_TOKEN = '0'
     & $Launcher $Probe --allow
     CheckExit 'Ordinary-host control'
+    $Collector = Get-ChildItem (Join-Path $VsDirectory 'Common7\IDE\Extensions\Microsoft\CodeCoverage.Console') -Filter 'Microsoft.CodeCoverage.Console.exe' -Recurse | Select-Object -First 1 -ExpandProperty FullName
+    if (-not $Collector) { throw '[Test:NativeHost] Native coverage collector required.' }
+    & $Collector collect $Launcher $Probe --allow -s (Join-Path $PSScriptRoot 'coverage.config.xml') -o NativeHostCoverage.xml -f cobertura
+    CheckExit 'Ordinary-host coverage'
+    $Coverage = [xml](Get-Content -LiteralPath NativeHostCoverage.xml -Raw)
+    $Covered = @($Coverage.SelectNodes("//class[contains(@filename, 'ocr_security.cpp')]/lines/line[@hits != '0']"))
+    if (-not $Covered.Count) { throw '[Test:NativeHost] Ordinary OCR guard execution was not recorded by coverage.' }
+    Write-Output "[Test:NativeHost] Ordinary guard coverage: $($Covered.Count) lines."
     $env:QCK_TEST_KEEP_TOKEN = '1'
     & $Launcher $Probe --deny
     CheckExit 'Preserved-host denial'
