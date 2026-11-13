@@ -20,6 +20,7 @@
 #include <QDebug>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QFontDatabase>
 #include <QFrame>
 #include <QHeaderView>
