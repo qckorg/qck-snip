@@ -70,9 +70,22 @@ private slots:
                 QVERIFY(File.open(QIODevice::WriteOnly));
                 File.write("untrusted native payload");
             }
+            // A valid loadable DLL prevents an invalid-image error from masking
+            // a missing privilege guard. Ordinary OCR tests load this fixture.
+            for (const QString Name : {QStringLiteral("oneocr.dll"), QStringLiteral("onnxruntime.dll")}) {
+                const QString Destination = QDir(Cache).filePath(Name);
+                if (QFile::exists(Destination)) QVERIFY(QFile::remove(Destination));
+                QVERIFY(QFile::copy(QStringLiteral(QCK_FAKE_ONEOCR_PATH), Destination));
+            }
             const std::pair<QString, QString> Package{QFileInfo(Cache).fileName(), Cache};
-            QVERIFY_EXCEPTION_THROWN(prepare_snipping_tool_files(Package), std::runtime_error);
-            QVERIFY_EXCEPTION_THROWN(SnippingToolOcr{Package}, std::runtime_error);
+            const auto CheckRefusal = [](auto Operation) {
+                QString Message;
+                try { Operation(); }
+                catch (const std::runtime_error& Error) { Message = QString::fromUtf8(Error.what()); }
+                QCOMPARE(Message, QStringLiteral("OCR requires a non-elevated process"));
+            };
+            CheckRefusal([&] { prepare_snipping_tool_files(Package); });
+            CheckRefusal([&] { SnippingToolOcr Engine{Package}; });
             const auto Dll = QDir::toNativeSeparators(QDir(Cache).filePath("oneocr.dll")).toStdWString();
             QVERIFY(!GetModuleHandleW(Dll.c_str()));
             char Error[512]{};
