@@ -174,7 +174,7 @@ private slots:
         QCOMPARE(info.tag_name, QString("v2.1.0"));
         QCOMPARE(info.title, QString("Version 2.1"));
         QCOMPARE(info.notes, QString("Added update checking."));
-        QCOMPARE(info.url, QString("https://github.com/1003129155/jietuba/releases/latest"));
+        QCOMPARE(info.url, QString("https://github.com/qckorg/qck-snip/releases/latest"));
     }
 
     void parseReleasePayloadRejectsUnusableResponses() {

@@ -17,6 +17,7 @@ static RUNTIME_LOADED: std::sync::atomic::AtomicBool = std::sync::atomic::Atomic
 /// 只收绝对路径：未加载时 ort 会按文件名走 DLL 搜索顺序，可能碰上系统自带的旧版。
 #[cfg(feature = "load-dynamic")]
 pub fn init_runtime(dll_path: &std::path::Path) -> Result<(), String> {
+    crate::native_security::EnsureNativeHost()?;
     use std::sync::atomic::Ordering;
     if RUNTIME_LOADED.load(Ordering::Acquire) {
         return Ok(());
@@ -442,6 +443,8 @@ impl Engine {
     /// 字典行数必须和识别模型的输出类别数对得上（类别 = 空白 + 字典 + 可选的末尾空格），
     /// 对不上就报错：错一位的字典不会失败，只会把每个字都识别成别的字。
     pub fn open_with_dict(det_path: &str, rec_path: &str, dict_path: Option<&str>) -> Result<Self, String> {
+        #[cfg(feature = "load-dynamic")]
+        crate::native_security::EnsureNativeHost()?;
         if !runtime_loaded() {
             return Err("ONNX Runtime 尚未加载".to_string());
         }

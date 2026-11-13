@@ -18,6 +18,7 @@ param(
     [switch]$BuildOnly,
     [switch]$Append,
     [int]$Jobs = 1,
+    [int]$BuildJobs = 2,
     [double]$FailUnder = 0
 )
 $ErrorActionPreference = 'Stop'
@@ -50,9 +51,13 @@ if (-not $SkipBuild) {
     $env:CARGO_PROFILE_RELEASE_CODEGEN_UNITS = '16'
     # /Z7 keeps debug info in the objects, so parallel compiles do not queue on one PDB writer.
     & $cmake -S $projectRoot -B $buildDir -G $generator -A x64 "-DCMAKE_GENERATOR_INSTANCE=$vsRoot" "-DCMAKE_PREFIX_PATH=$QtRoot" '-DBUILD_TESTING=ON' `
-        '-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=/Z7 /Od /Ob0 /DNDEBUG' '-DCMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO=/DEBUG /INCREMENTAL:NO'
+        '-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=/Z7 /Od /Ob0 /DNDEBUG' '-DCMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO=/DEBUG /INCREMENTAL:NO' `
+        '-DQCK_ENABLE_ADMIN_STARTUP=ON' '-DQCK_ENABLE_UPDATES=ON' '-DQCK_TEST_PRIVILEGED_HOST=ON'
+    # Retained integration suites exercise the optional implementations. The separate
+    # policy matrix and disabled-service tests exercise production default-off behavior.
     if ($LASTEXITCODE -ne 0) { throw 'CMake configuration failed.' }
-    & $cmake --build $buildDir --config $config --parallel
+    $env:CARGO_BUILD_JOBS = "$BuildJobs"
+    & $cmake --build $buildDir --config $config --parallel $BuildJobs
     if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
 }
 if ($BuildOnly) { return }

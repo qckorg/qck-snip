@@ -149,7 +149,7 @@ private slots:
         main_app_->setup_pin_tray_updates();
         QVERIFY(main_app_->tray_icon);
         QVERIFY(!main_app_->tray_icon->icon().isNull());
-        QVERIFY(main_app_->tray_icon->toolTip().contains("jietuba"));
+        QVERIFY(main_app_->tray_icon->toolTip().contains("qck-snip"));
         auto *menu = main_app_->tray_icon->contextMenu();
         QVERIFY(menu);
         QVERIFY(action_texts(menu).size() >= 4);

@@ -32,6 +32,10 @@ constexpr unsigned PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
 std::optional<std::pair<quint64, QString>> get_process_identity(qint64 pid);
 // Does not check identity; callers must confirm it with get_process_identity first.
 bool terminate_process_by_pid(qint64 pid);
+// Untrusted instance records are hints. Validate full image, account and optional
+// creation time on the same process handle used for termination.
+bool MatchesInstance(qint64 Pid, std::optional<quint64> CreationTime);
+bool TerminateInstance(qint64 Pid, std::optional<quint64> CreationTime);
 
 // Files and folders copied into folder by Windows' own copy engine, the one the file manager uses: its progress
 // window can cancel, and a name already taken gets a new one. Sources that no longer exist are left out. Runs on a

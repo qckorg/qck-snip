@@ -1,5 +1,6 @@
 #include "ocr/snipping_tool_ocr.h"
 #include "core/feature_settings.h"
+#include "core/ocr_security.h"
 #include "core/constants.h"
 #include "ocr/ocr_line_geometry.h"
 // Generated at configure time from the oneocr package (CMakeLists.txt).
@@ -131,6 +132,7 @@ QString snipping_tool_cache_root() {
 }
 
 QString prepare_snipping_tool_files(const std::pair<QString, QString> &package) {
+    if (!qck::Security::CanLoadOcrRuntime()) throw std::runtime_error("OCR requires a non-elevated process");
     if (!qck::FeatureSettings::IsEnabled(qck::Feature::Ocr)) throw std::runtime_error("OCR disabled by feature policy");
     const auto &[full_name, source] = package;
     const QDir root(snipping_tool_cache_root());
@@ -153,6 +155,7 @@ QString prepare_snipping_tool_files(const std::pair<QString, QString> &package) 
 }
 
 SnippingToolOcr::SnippingToolOcr(const std::pair<QString, QString> &package) {
+    if (!qck::Security::CanLoadOcrRuntime()) throw std::runtime_error("OCR requires a non-elevated process");
     const auto files_dir = QDir::toNativeSeparators(prepare_snipping_tool_files(package));
     const auto check = [](int64_t result, const char *message) {
         if (result != 0) throw std::runtime_error(QString("%1 (Code: %2)").arg(message).arg(result).toStdString());

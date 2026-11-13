@@ -1,5 +1,6 @@
 #include "ocr/ocr_manager.h"
 #include "core/feature_settings.h"
+#include "core/ocr_security.h"
 #include "core/logger.h"
 #include "ocr/ocr_bands.h"
 #include "ocr/ocr_line_geometry.h"
@@ -109,6 +110,7 @@ QString configured_preference() { return get_tool_settings_manager()->get_ocr_en
 class PpocrEngine {
 public:
     explicit PpocrEngine(const PpocrFiles &files) {
+        if (!qck::Security::CanLoadOcrRuntime()) throw std::runtime_error("OCR requires a non-elevated process");
         char error[512] = {};
         if (!jb_ppocr_init_runtime(QDir::toNativeSeparators(ppocr_models::runtime_path()).toUtf8().constData(), error, sizeof error)) throw std::runtime_error(error);
         const QByteArray dict = QDir::toNativeSeparators(files.dict).toUtf8();
@@ -176,7 +178,7 @@ OCRManager &OCRManager::instance() {
 }
 
 bool OCRManager::is_available() const {
-    return qck::FeatureSettings::IsEnabled(qck::Feature::Ocr) && (oneocr_available(one_loaded_) || ppocr_ready());
+    return qck::FeatureSettings::IsEnabled(qck::Feature::Ocr) && qck::Security::CanLoadOcrRuntime() && (oneocr_available(one_loaded_) || ppocr_ready());
 }
 
 QStringList OCRManager::get_available_engines() const {
@@ -336,6 +338,7 @@ void OCRManager::ensure_preference() {
 }
 
 bool OCRManager::initialize(const QString &engine_type) {
+    if (!qck::Security::CanLoadOcrRuntime()) { set_last_error("OCR requires a non-elevated process"); return false; }
     if (!qck::FeatureSettings::IsEnabled(qck::Feature::Ocr)) return false;
     if (!engine_type.isEmpty()) set_engine(engine_type);
     else ensure_preference();
@@ -347,6 +350,7 @@ bool OCRManager::initialize(const QString &engine_type) {
 }
 
 bool OCRManager::initialize_ppocr_rust() {
+    if (!qck::Security::CanLoadOcrRuntime()) { set_last_error("OCR requires a non-elevated process"); return false; }
     if (!qck::FeatureSettings::IsEnabled(qck::Feature::Ocr)) return false;
     const auto model = selected_ppocr_model();
     if (!model) {
@@ -401,6 +405,7 @@ bool OCRManager::initialize_ppocr_rust() {
 }
 
 bool OCRManager::initialize_oneocr() {
+    if (!qck::Security::CanLoadOcrRuntime()) { set_last_error("OCR requires a non-elevated process"); return false; }
     if (!qck::FeatureSettings::IsEnabled(qck::Feature::Ocr)) return false;
     if (!oneocr_available(one_loaded_)) {
         set_last_error(QString::fromUtf8("截图工具 OCR 不可用"));

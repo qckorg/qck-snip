@@ -35,7 +35,31 @@ int wmain() {
     STARTUPINFOW startup{};
     startup.cb = sizeof(startup);
     PROCESS_INFORMATION process{};
-    if (!CreateProcessW(nullptr, command, nullptr, nullptr, TRUE, CREATE_SUSPENDED, nullptr, nullptr, &startup, &process)) return 3;
+    HANDLE Token = nullptr, Restricted = nullptr;
+    TOKEN_ELEVATION Elevated{};
+    DWORD Length = 0;
+    wchar_t KeepToken[2]{};
+    const bool Preserve = GetEnvironmentVariableW(L"QCK_TEST_KEEP_TOKEN", KeepToken, 2) == 1 && KeepToken[0] == L'1';
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY, &Token)) return 4;
+    if (!GetTokenInformation(Token, TokenElevation, &Elevated, sizeof(Elevated), &Length)) { CloseHandle(Token); return 4; }
+    BOOL Started = FALSE;
+    if (Elevated.TokenIsElevated && !Preserve) {
+        // Exercise normal desktop behavior. Lowering integrity alone retains admin authority.
+        if (!CreateRestrictedToken(Token, DISABLE_MAX_PRIVILEGE | LUA_TOKEN, 0, nullptr, 0, nullptr, 0, nullptr, &Restricted)) { CloseHandle(Token); return 4; }
+        BYTE Sid[SECURITY_MAX_SID_SIZE]{};
+        DWORD SidSize = sizeof(Sid);
+        TOKEN_MANDATORY_LABEL Label{};
+        if (!CreateWellKnownSid(WinMediumLabelSid, nullptr, Sid, &SidSize)) { CloseHandle(Restricted); CloseHandle(Token); return 4; }
+        Label.Label.Sid = Sid;
+        Label.Label.Attributes = SE_GROUP_INTEGRITY;
+        if (!SetTokenInformation(Restricted, TokenIntegrityLevel, &Label, sizeof(Label) + SidSize)) { CloseHandle(Restricted); CloseHandle(Token); return 4; }
+        Started = CreateProcessAsUserW(Restricted, nullptr, command, nullptr, nullptr, TRUE, CREATE_SUSPENDED, nullptr, nullptr, &startup, &process);
+        CloseHandle(Restricted);
+    } else {
+        Started = CreateProcessW(nullptr, command, nullptr, nullptr, TRUE, CREATE_SUSPENDED, nullptr, nullptr, &startup, &process);
+    }
+    CloseHandle(Token);
+    if (!Started) return 3;
     if (job) AssignProcessToJobObject(job, process.hProcess);
     ResumeThread(process.hThread);
     CloseHandle(process.hThread);

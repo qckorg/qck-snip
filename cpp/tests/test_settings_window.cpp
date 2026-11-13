@@ -1488,8 +1488,8 @@ private slots:
         QTemporaryDir root;
         const QString program = root.filePath("program"), roaming = root.filePath("roaming");
         QDir().mkpath(program);
-        QDir().mkpath(roaming + "/Jietuba");
-        const QString appdata_file = roaming + "/Jietuba/settings.ini", beside_file = program + "/settings.ini";
+        QDir().mkpath(roaming + "/QckSnip");
+        const QString appdata_file = roaming + "/QckSnip/settings.ini", beside_file = program + "/settings.ini";
         QSettings start(appdata_file, QSettings::IniFormat);
         ToolSettingsManager config(start);
         config.set_hotkey("ctrl+9");

@@ -67,14 +67,14 @@ Source file_source(const QDir &folder, const QVariantMap &settings) {
 class DataFolderTests : public QObject {
     Q_OBJECT
 private:
-    // Under HKCU\Software\JietubaTest, removed when the tests end.
-    const QString registry_ = QString("Software\\JietubaTest\\DataFolder%1").arg(QCoreApplication::applicationPid());
+    // Under HKCU\Software\QckSnipTest, removed when the tests end.
+    const QString registry_ = QString("Software\\QckSnipTest\\DataFolder%1").arg(QCoreApplication::applicationPid());
     QString registry_path(const QString &name) const { return "HKEY_CURRENT_USER\\" + registry_ + "\\" + name; }
 private slots:
     void init() { data_folder::write_deferred_log(); }
     void cleanupTestCase() {
         RegDeleteTreeW(HKEY_CURRENT_USER, reinterpret_cast<LPCWSTR>(registry_.utf16()));
-        RegDeleteKeyW(HKEY_CURRENT_USER, L"Software\\JietubaTest");
+        RegDeleteKeyW(HKEY_CURRENT_USER, L"Software\\QckSnipTest");
         QVERIFY(!registry_key_exists(registry_));
     }
 
@@ -82,8 +82,8 @@ private slots:
         QTemporaryDir program, roaming;
         const auto installed = resolve_data_location(program.path(), roaming.path());
         QVERIFY(!installed.beside_program);
-        QCOMPARE(installed.dir, QDir(roaming.path()).filePath("Jietuba"));
-        QCOMPARE(installed.settings_file(), QDir(roaming.path()).filePath("Jietuba/settings.ini"));
+        QCOMPARE(installed.dir, QDir(roaming.path()).filePath("QckSnip"));
+        QCOMPARE(installed.settings_file(), QDir(roaming.path()).filePath("QckSnip/settings.ini"));
         // A folder of that name is not the settings file.
         QVERIFY(QDir(program.path()).mkdir("settings.ini"));
         QVERIFY(!resolve_data_location(program.path(), roaming.path()).beside_program);
@@ -103,7 +103,7 @@ private slots:
         const QSet<QString> expected{"app/screenshot_save_path", "app/save_dialog_last_dir", "clipboard/db_path", "app/log_dir",
                                      "app/autostart_enabled", "app/run_as_admin", "app/has_run_before", "app/welcome_wizard_done"};
         QCOMPARE(LOCAL_SETTING_PATHS(), expected);
-        QCOMPARE(LOCAL_SETTINGS_KEY, QString("HKEY_CURRENT_USER\\Software\\Jietuba\\ToolSettings"));
+        QCOMPARE(LOCAL_SETTINGS_KEY, QString("HKEY_CURRENT_USER\\Software\\QckOrg\\QckSnip\\ToolSettings"));
     }
 
     // Local settings are read and written in the registry, the rest in the settings file; deleting the
@@ -137,11 +137,11 @@ private slots:
     }
 
     void olderStoresAreTheRegistry() {
-        const auto installed = data_folder::sources_for({"C:/Users/u/AppData/Roaming/Jietuba", false});
+        const auto installed = data_folder::sources_for({"C:/Users/u/AppData/Roaming/QckSnip", false});
         QCOMPARE(installed.size(), 1);
-        QCOMPARE(installed[0].settings, QString("HKEY_CURRENT_USER\\Software\\Jietuba\\ToolSettings"));
-        QCOMPARE(installed[0].clipboard_window, QString("HKEY_CURRENT_USER\\Software\\Jietuba\\ClipboardWindow"));
-        QCOMPARE(installed[0].migrated, QString("HKEY_CURRENT_USER\\Software\\Jietuba\\Migrated"));
+        QCOMPARE(installed[0].settings, QString("HKEY_CURRENT_USER\\Software\\QckOrg\\QckSnip\\ToolSettings"));
+        QCOMPARE(installed[0].clipboard_window, QString("HKEY_CURRENT_USER\\Software\\QckOrg\\QckSnip\\ClipboardWindow"));
+        QCOMPARE(installed[0].migrated, QString("HKEY_CURRENT_USER\\Software\\QckOrg\\QckSnip\\Migrated"));
         // A settings file beside the program, even empty, is used as it is.
         QVERIFY(data_folder::sources_for({"D:/tools/jietuba", true}).isEmpty());
         // Tests never read the user's registry.

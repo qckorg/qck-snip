@@ -1,4 +1,5 @@
 #include "core/bootstrap.h"
+#include "core/elevation.h"
 #include "video/worker.h"
 #include <QString>
 #include <algorithm>
@@ -24,6 +25,10 @@ std::vector<std::string> utf8_arguments() {
 }
 
 int main(int argc, char **argv) {
+    if (argc > 1 && (std::string(argv[1]) == jietuba::elevation::InstallArgument || std::string(argv[1]) == jietuba::elevation::RemoveArgument)) {
+        SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX | SEM_NOGPFAULTERRORBOX);
+        return argc == 2 ? jietuba::elevation::RunTaskHelper(std::string(argv[1]) == jietuba::elevation::InstallArgument) : 1;
+    }
     // The MP4 recording worker branches off before Qt starts.
     if (argc > 1 && std::string(argv[1]) == "--video-recorder-worker") {
         const auto args = utf8_arguments();
