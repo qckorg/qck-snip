@@ -45,6 +45,7 @@ private slots:
 
     void PolicyAndSideEffects() {
         const auto& Policy = qck::FeatureSettings::GetPolicy();
+        qck::FeatureSettings::ReportDiagnostics();
         if (Mode == "enabled") {
             for (const auto& Item : qck::GetFeatures()) {
                 QVERIFY(Policy.IsConfigured(Item.Id));

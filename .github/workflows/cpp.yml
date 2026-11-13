@@ -101,7 +101,7 @@ jobs:
       # built by the Lite single exe workflow.
       - id: build
         if: steps.scope.outputs.code == 'true'
-        run: .\scripts\coverage.ps1 -BuildOnly
+        run: .\scripts\coverage.ps1 -BuildOnly -PrivilegedHost
 
       - id: tests
         if: steps.scope.outputs.code == 'true'
@@ -112,12 +112,21 @@ jobs:
       - if: failure() && steps.tests.outcome == 'failure'
         run: .\scripts\show_failed_tests.ps1
 
-      # Tests on the real desktop (-platform windows) inject input, register hotkeys and capture
-      # the screen. The runner's interactive session runs them for their coverage; they stay
-      # required on developer machines, and a failure here does not fail the check.
-      - id: desktop
+      # Large-scale layout fixtures need room for their minimum window sizes.
+      # This changes only the disposable hosted runner's display.
+      - id: desktop_setup
         if: always() && steps.build.outcome == 'success'
-        continue-on-error: true
+        run: |
+          Set-DisplayResolution -Width 1920 -Height 1080 -Force
+          Add-Type -AssemblyName System.Windows.Forms
+          $Bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          Write-Output "[Test:Desktop] Bounds=$Bounds"
+          if ($Bounds.Width -lt 1920 -or $Bounds.Height -lt 1080) { throw 'Desktop resolution setup failed.' }
+
+      # Tests on the real desktop inject input, register hotkeys and capture the
+      # runner's screen. They are serialized and required for this check.
+      - id: desktop
+        if: always() && steps.build.outcome == 'success' && steps.desktop_setup.outcome == 'success'
         run: .\scripts\coverage.ps1 -SkipBuild -Append -TestFilter '_desktop$|_windows_parity$'
 
       - if: always() && steps.desktop.outcome == 'failure'
@@ -154,3 +163,6 @@ jobs:
             cpp/build/coverage/coverage.xml
             cpp/build/coverage/summary.txt
           if-no-files-found: ignore
+      - name: Capture profile build and service checks
+        if: always() && steps.build.outcome == 'success'
+        run: .\scripts\check_capture_profile.ps1
