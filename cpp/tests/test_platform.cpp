@@ -281,7 +281,7 @@ private slots:
         auto child = start_child("--crash-native", app_data);
         QVERIFY(child->waitForFinished(30000));
         QVERIFY(child->exitStatus() == QProcess::CrashExit || child->exitCode() != 0);
-        const auto log = read_all(QDir(app_data).filePath("Jietuba/Logs/" + FAULT_LOG_NAME));
+        const auto log = read_all(QDir(app_data).filePath("QckSnip/Logs/" + FAULT_LOG_NAME));
         QVERIFY2(log.contains("--- session"), qPrintable(log));
         QVERIFY2(log.contains("Windows fatal exception: code 0xc0000005"), qPrintable(log));
         QVERIFY(log.contains("Native stack"));
@@ -294,7 +294,7 @@ private slots:
         auto child = start_child("--crash-throw", app_data);
         QVERIFY(child->waitForFinished(30000));
         QVERIFY(child->exitStatus() == QProcess::CrashExit || child->exitCode() != 0);
-        const auto log = read_all(QDir(app_data).filePath("Jietuba/Logs/" + CRASH_LOG_NAME));
+        const auto log = read_all(QDir(app_data).filePath("QckSnip/Logs/" + CRASH_LOG_NAME));
         QVERIFY2(log.contains("boom from the test"), qPrintable(log));
         QVERIFY(log.contains("runtime_error"));
     }
@@ -304,7 +304,7 @@ private slots:
         qputenv("LOCALAPPDATA", dir_.filePath("direct").toLocal8Bit());
         write_crash("test tag", "line one\n");
         qputenv("LOCALAPPDATA", saved);
-        const auto log = read_all(dir_.filePath("direct/Jietuba/Logs/" + CRASH_LOG_NAME));
+        const auto log = read_all(dir_.filePath("direct/QckSnip/Logs/" + CRASH_LOG_NAME));
         QVERIFY(log.contains("test tag"));
         QVERIFY(log.contains("line one"));
     }
@@ -351,6 +351,37 @@ private slots:
             QApplication::sendEvent(button, &enter);
             QEvent leave(QEvent::Leave);
             QApplication::sendEvent(button, &leave);
+        }
+    }
+    void ForgedInstanceRecordsCannotTerminateAnotherImage() {
+        QTemporaryDir CopyDirectory;
+        const QString CopyPath = CopyDirectory.filePath(QFileInfo(QCoreApplication::applicationFilePath()).fileName());
+        QVERIFY(QFile::copy(QStringLiteral(QCK_FAKE_INSTANCE_PATH), CopyPath));
+        QProcess Other;
+        Other.start(CopyPath, QStringList{});
+        QVERIFY(Other.waitForStarted());
+        QVERIFY(Other.waitForReadyRead());
+        const auto Cleanup = qScopeGuard([&] { Other.kill(); Other.waitForFinished(); });
+        const auto Identity = get_process_identity(Other.processId());
+        QVERIFY(Identity);
+        // Both the two-line creation-time bypass and legacy same-basename alias fail.
+        QVERIFY(!MatchesInstance(Other.processId(), Identity->first));
+        QVERIFY(!TerminateInstance(Other.processId(), Identity->first));
+        QVERIFY(!TerminateInstance(Other.processId(), std::nullopt));
+        QVERIFY(!TerminateInstance(Other.processId() + (qint64(1) << 32), Identity->first));
+        QVERIFY(!TerminateInstance(QCoreApplication::applicationPid(), std::nullopt));
+        QCOMPARE(Other.state(), QProcess::Running);
+        for (const QByteArray Record : {QByteArray::number(Other.processId()) + "\n" + QByteArray::number(Identity->first) + "\n",
+                                       QByteArray::number(Other.processId()) + "\n"}) {
+            QFile File(pid_file());
+            QVERIFY(File.open(QIODevice::WriteOnly | QIODevice::Truncate));
+            QCOMPARE(File.write(Record), Record.size());
+            File.close();
+            auto Child = start_child("--instance", dir_.filePath("forged-record"));
+            QVERIFY(Child->waitForReadyRead(10000));
+            QVERIFY(!Other.waitForFinished(50));
+            Child->kill();
+            Child->waitForFinished();
         }
     }
     // A new instance ends a confirmed older one and records itself; anything else is left alone.

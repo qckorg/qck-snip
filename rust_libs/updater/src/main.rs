@@ -70,7 +70,7 @@ fn cache(args: &HashMap<String, String>) -> Result<PathBuf> {
             code: "path",
             message: "LOCALAPPDATA 不可用".into(),
         })?)
-        .join("jietuba/updater")
+        .join("QckSnip/updater")
     };
     if !root.is_absolute() {
         return core::fail("path", "缓存路径必须为绝对路径");

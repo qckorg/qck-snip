@@ -183,8 +183,12 @@ private:
     // ---- Rules ----
     void detect_rules();
     bool hrule_between(double ya, double yb, double x0, double x1, double min_len) const {
+        // OCR boxes can pad a few pixels across a real row rule. Scale the
+        // tolerance with text height so that padding does not turn rows into
+        // wrapped cells; the original 2 px tolerance remains for 20 px text.
+        const double Padding = std::max(2.0, 0.1 * text_h_);
         for (const auto &r : hrules_)
-            if (ya - 2 <= r.pos && r.pos <= yb + 2 && std::min<double>(r.end, x1) - std::max<double>(r.start, x0) >= min_len) return true;
+            if (ya - Padding <= r.pos && r.pos <= yb + Padding && std::min<double>(r.end, x1) - std::max<double>(r.start, x0) >= min_len) return true;
         return false;
     }
     bool vrule_at(double x, double y0, double y1) const {

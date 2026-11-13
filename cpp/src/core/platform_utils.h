@@ -24,7 +24,7 @@ void set_dpi_awareness();
 double get_system_dpi(double fallback = 96.0);
 
 // Taskbar grouping; must run before QApplication is created.
-void set_app_user_model_id(const QString &app_id = "jietuba.app");
+void set_app_user_model_id(const QString &app_id = "qckorg.qck-snip");
 
 // Processes. PIDs are recycled, so (creation time, image name) identifies a process.
 constexpr unsigned PROCESS_TERMINATE = 0x0001;
@@ -32,6 +32,10 @@ constexpr unsigned PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
 std::optional<std::pair<quint64, QString>> get_process_identity(qint64 pid);
 // Does not check identity; callers must confirm it with get_process_identity first.
 bool terminate_process_by_pid(qint64 pid);
+// Untrusted instance records are hints. Validate full image, account and optional
+// creation time on the same process handle used for termination.
+bool MatchesInstance(qint64 Pid, std::optional<quint64> CreationTime);
+bool TerminateInstance(qint64 Pid, std::optional<quint64> CreationTime);
 
 // Files and folders copied into folder by Windows' own copy engine, the one the file manager uses: its progress
 // window can cancel, and a name already taken gets a new one. Sources that no longer exist are left out. Runs on a
@@ -86,7 +90,7 @@ void disable_native_frame(quintptr hwnd);
 long long get_last_error();
 // The HKCU Run entry starting this program at sign-in. Shared with the Python version, like
 // the autostart_enabled setting: whichever version last turned it on starts at sign-in.
-inline const QString AUTOSTART_APP_NAME = "Jietuba";
+inline const QString AUTOSTART_APP_NAME = "QckSnip";
 inline constexpr wchar_t AUTOSTART_REG_KEY[] = L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run";
 bool get_autostart();
 // The program the Run entry starts; nullopt without one.

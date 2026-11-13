@@ -1,4 +1,6 @@
 #include "ocr/snipping_tool_ocr.h"
+#include "core/feature_settings.h"
+#include "core/ocr_security.h"
 #include "core/constants.h"
 #include "ocr/ocr_line_geometry.h"
 // Generated at configure time from the oneocr package (CMakeLists.txt).
@@ -92,6 +94,7 @@ bool snipping_tool_files_present(const QString &directory) {
 }
 
 std::optional<std::pair<QString, QString>> find_snipping_tool() {
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::Ocr)) return std::nullopt;
     using FindPackagesByPackageFamilyFn = LONG(WINAPI *)(PCWSTR, UINT32, UINT32 *, PWSTR *, UINT32 *, WCHAR *, UINT32 *);
     using GetPackagePathByFullNameFn = LONG(WINAPI *)(PCWSTR, UINT32 *, PWSTR);
     auto *kernel32 = GetModuleHandleW(L"kernel32.dll");
@@ -129,6 +132,8 @@ QString snipping_tool_cache_root() {
 }
 
 QString prepare_snipping_tool_files(const std::pair<QString, QString> &package) {
+    if (!qck::Security::CanLoadOcrRuntime()) throw std::runtime_error("OCR requires a non-elevated process");
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::Ocr)) throw std::runtime_error("OCR disabled by feature policy");
     const auto &[full_name, source] = package;
     const QDir root(snipping_tool_cache_root());
     const auto target = root.filePath(full_name);
@@ -150,15 +155,16 @@ QString prepare_snipping_tool_files(const std::pair<QString, QString> &package) 
 }
 
 SnippingToolOcr::SnippingToolOcr(const std::pair<QString, QString> &package) {
+    if (!qck::Security::CanLoadOcrRuntime()) throw std::runtime_error("OCR requires a non-elevated process");
     const auto files_dir = QDir::toNativeSeparators(prepare_snipping_tool_files(package));
     const auto check = [](int64_t result, const char *message) {
         if (result != 0) throw std::runtime_error(QString("%1 (Code: %2)").arg(message).arg(result).toStdString());
     };
-    // The engine finds its dependencies through the DLL directory, which is process-wide;
-    // its dependencies are loaded once the engine exists, so the default order comes back.
-    SetDllDirectoryW(files_dir.toStdWString().c_str());
+    // Scope dependency lookup to this load. A process-wide DLL directory would
+    // also affect concurrent operations and child processes started during OCR.
     try {
-        auto *module = LoadLibraryW(QDir(files_dir).filePath("oneocr.dll").toStdWString().c_str());
+        auto *module = LoadLibraryExW(QDir(files_dir).filePath("oneocr.dll").toStdWString().c_str(), nullptr,
+                                     LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
         if (!module) throw std::runtime_error("DLL initialization failed");
         dll_ = module;
         api_ = new Api;
@@ -194,11 +200,9 @@ SnippingToolOcr::SnippingToolOcr(const std::pair<QString, QString> &package) {
         check(api_->create_process_options(&process_options_), "Process options creation failed");
         if (api_->set_max_line_count) check(api_->set_max_line_count(process_options_, 1000), "Line count config failed");
     } catch (...) {
-        SetDllDirectoryW(nullptr);
         close();
         throw;
     }
-    SetDllDirectoryW(nullptr);
 }
 
 SnippingToolOcr::~SnippingToolOcr() { close(); }

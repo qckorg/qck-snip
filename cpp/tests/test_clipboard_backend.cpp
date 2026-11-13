@@ -210,7 +210,7 @@ private slots:
         QVERIFY(QFileInfo(path).isFile());
         QVERIFY(QFileInfo(manager().get_images_dir().value_or(QString())).isDir());
         // The backend's own default, shared with the Python version; the test sandbox moves %APPDATA%.
-        QCOMPARE(ClipboardManager::default_db_path(), QDir::toNativeSeparators(QDir(qEnvironmentVariable("APPDATA")).filePath("pyclipboard/clipboard.db")));
+        QCOMPARE(ClipboardManager::default_db_path(), QDir::toNativeSeparators(QDir(qEnvironmentVariable("APPDATA")).filePath("QckSnip/clipboard/clipboard.db")));
         QVERIFY(ClipboardManager::default_db_path().startsWith(QDir::toNativeSeparators(test_sandbox_dir())));
         QCOMPARE(ClipboardManager::max_stitched_pixels(), quint64(60'000'000));
         QVERIFY(add_texts({"kept"}).first() > 0);

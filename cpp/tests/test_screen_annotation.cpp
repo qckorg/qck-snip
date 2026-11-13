@@ -802,6 +802,8 @@ private slots:
         stub_->button(1, false, at);
         // The rings run out by themselves, on a timer that stops with the last one.
         QTRY_COMPARE_WITH_TIMEOUT(light->ripple_count(), 0, 3000);
+        // An unchanged physical cursor must not replace the hub's supplied position.
+        QCOMPARE(light->disc_position(), QPointF(400, 300));
         // Not an annotation.
         QCOMPARE(drawing_count(view), 0);
         QVERIFY(!view->has_drawings());
@@ -899,11 +901,20 @@ private slots:
         auto &annotation = start();
         annotation.set_cursor_highlight(true, false);
         auto *view = annotation.view();
-        SetCursorPos(640, 610);
+        QVERIFY(SetCursorPos(640, 610));
+        POINT Actual{};
+        QVERIFY(GetCursorPos(&Actual));
+        QCOMPARE(QPoint(Actual.x, Actual.y), QPoint(640, 610));
         QTRY_VERIFY_WITH_TIMEOUT(view->pointer_light(false) && view->pointer_light(false)->disc_position() == QPointF(640, 610), 3000);
-        SetCursorPos(900, 700);
+        QVERIFY(SetCursorPos(900, 700));
+        QVERIFY(GetCursorPos(&Actual));
+        QCOMPARE(QPoint(Actual.x, Actual.y), QPoint(900, 700));
         QTRY_COMPARE_WITH_TIMEOUT(view->pointer_light(false)->disc_position(), QPointF(900, 700), 3000);
+        // Queue a read, then ensure disabling also stops the fallback sampler.
+        annotation.cursor_highlight()->on_cursor_moved();
         annotation.set_cursor_highlight(false, false);
+        QTest::qWait(150);
+        QVERIFY(!view->pointer_light(false));
     }
 
     // A screenshot leaves the light out; the choice stays for the next session.

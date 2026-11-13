@@ -16,8 +16,16 @@ inline const QString STANDARD = "standard";
 
 QString elevation_state();
 QString task_name();
-// The task definition handed to schtasks /XML; the tests compare it with a fixed sample.
+// The definition is registered in memory; no definition file crosses UAC.
 QString build_task_xml(const QString &command, const QString &user);
+inline constexpr const char* InstallArgument = "--qck-install-admin-task";
+inline constexpr const char* RemoveArgument = "--qck-remove-admin-task";
+// Fixed-purpose entry point. Accepts no paths, XML, account or task-name input.
+int RunTaskHelper(bool Install);
+// Syntax validation through Task Scheduler; never registers a task.
+bool ValidateTask();
+using TaskWriter = std::function<std::pair<int, QByteArray>(bool, const QString&)>;
+void SetTaskWriterForTest(TaskWriter Writer);
 
 using SchtasksRunner = std::function<std::pair<int, QByteArray>(const QStringList &)>;
 // Replace the schtasks calls (plain and through UAC); empty restores them. Inside the test

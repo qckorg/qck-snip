@@ -1,4 +1,5 @@
 #include "ui/tray_menu.h"
+#include "core/feature_settings.h"
 #include "core/constants.h"
 #include "core/i18n.h"
 #include "core/logger.h"
@@ -139,10 +140,12 @@ QMenu *create_tray_menu(MainApp *app) {
     menu->addAction(action_delayed_screenshot);
 
     auto *action_clipboard = new QAction(with_hotkey(app, tr_text("Clipboard"), "clipboard"), menu);
+    action_clipboard->setEnabled(qck::FeatureSettings::IsEnabled(qck::Feature::ClipboardHistory));
     QObject::connect(action_clipboard, &QAction::triggered, app, &MainApp::open_clipboard_window);
     menu->addAction(action_clipboard);
 
     auto *action_translate = new QAction(with_hotkey(app, tr_text("Translation"), "translation"), menu);
+    action_translate->setEnabled(qck::FeatureSettings::IsEnabled(qck::Feature::Translation));
     QObject::connect(action_translate, &QAction::triggered, app, &MainApp::open_translator);
     menu->addAction(action_translate);
 

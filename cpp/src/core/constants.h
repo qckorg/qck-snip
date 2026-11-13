@@ -29,7 +29,7 @@ QString get_system_default_text_font_family();
 QStringList get_available_text_fonts();
 QString normalize_text_font_family(const QString &font_family, const QString *language_code = nullptr);
 
-inline const QString PROJECT_GITHUB_URL = "https://github.com/1003129155/jietuba";
+inline const QString PROJECT_GITHUB_URL = "https://github.com/qckorg/qck-snip";
 inline const QString PROJECT_RELEASES_LATEST_URL = PROJECT_GITHUB_URL + "/releases/latest";
-inline const QString PROJECT_LATEST_RELEASE_API_URL = "https://api.github.com/repos/1003129155/jietuba/releases/latest";
+inline const QString PROJECT_LATEST_RELEASE_API_URL = "https://api.github.com/repos/qckorg/qck-snip/releases/latest";
 }

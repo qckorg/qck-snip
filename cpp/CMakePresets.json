@@ -1,0 +1,33 @@
+{
+  "version": 4,
+  "configurePresets": [
+    {
+      "name": "policy",
+      "displayName": "Dependency-free policy qualification",
+      "binaryDir": "${sourceDir}/build/qck-policy",
+      "cacheVariables": {
+        "QCK_POLICY_ONLY": "ON",
+        "BUILD_TESTING": "ON"
+      }
+    },
+    {
+      "name": "policy-capture",
+      "inherits": "policy",
+      "binaryDir": "${sourceDir}/build/qck-policy-capture",
+      "cacheVariables": {
+        "QCK_ENABLE_OCR": "OFF",
+        "QCK_ENABLE_TRANSLATION": "OFF",
+        "QCK_ENABLE_CLIPBOARD_HISTORY": "OFF"
+      }
+    },
+    {
+      "name": "policy-all",
+      "inherits": "policy",
+      "binaryDir": "${sourceDir}/build/qck-policy-all",
+      "cacheVariables": {
+        "QCK_ENABLE_ADMIN_STARTUP": "ON",
+        "QCK_ENABLE_UPDATES": "ON"
+      }
+    }
+  ]
+}

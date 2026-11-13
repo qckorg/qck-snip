@@ -27,7 +27,7 @@ void emit_event(const QString &event, const QJsonObject &data) {
 }
 
 QJsonObject release(const QString &tag) {
-    return {{"tag_name", tag},          {"title", tag}, {"notes", "Bug fixes"}, {"url", "https://github.com/1003129155/jietuba/releases/latest"},
+    return {{"tag_name", tag},          {"title", tag}, {"notes", "Bug fixes"}, {"url", "https://github.com/qckorg/qck-snip/releases/latest"},
             {"asset_name", "package.zip"}, {"arch", "x64"},
             {"artifact", QJsonObject{{"urls", QJsonArray{"https://example.com/package.zip"}}, {"size", 123}}}};
 }

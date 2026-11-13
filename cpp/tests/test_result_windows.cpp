@@ -17,8 +17,10 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QContextMenuEvent>
+#include <QDebug>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QFontDatabase>
 #include <QFrame>
 #include <QHeaderView>
@@ -158,7 +160,19 @@ private slots:
         font_family = QFontDatabase::applicationFontFamilies(font_id).value(0);
         codes_image_ = QImage(JIETUBA_BARCODE_FIXTURE_DIR "/barcodes.png");
         QVERIFY(!codes_image_.isNull());
+        // Select the supplied read-only pack explicitly. Another test process
+        // installing models beside our shared executable must not decide which
+        // recognition cases run or skip here.
+        const QString Pack = qEnvironmentVariable("JIETUBA_PPOCR_MODELS");
+        if (!Pack.isEmpty()) {
+            for (const char* Name : {"PP-OCRv6_det_small.onnx", "PP-OCRv6_rec_small.onnx", "onnxruntime.dll"})
+                QVERIFY(QFileInfo(QDir(Pack).filePath(Name)).isFile());
+            ppocr_models::set_models_root_for_test(Pack);
+            QVERIFY2(is_ocr_available(), "The supplied OCR pack must be available to result-window tests");
+        }
     }
+
+    void cleanupTestCase() { release_ocr_engine(); ppocr_models::set_models_root_for_test({}); }
 
     void init() { settings_->clear(); }
 
@@ -205,10 +219,11 @@ private slots:
     void missingModelsSayWhereToGetThem() {
         QTemporaryDir models;
         QVERIFY(models.isValid());
+        const QString PreviousRoot = ppocr_models::models_root();
         ppocr_models::set_models_root_for_test(models.path());
         set_oneocr_available_for_test(false);
-        const auto restore = qScopeGuard([] {
-            ppocr_models::set_models_root_for_test({});
+        const auto restore = qScopeGuard([PreviousRoot] {
+            ppocr_models::set_models_root_for_test(PreviousRoot);
             set_oneocr_available_for_test(std::nullopt);
         });
         auto *window = show_text_recognition(blank_image());
@@ -222,10 +237,11 @@ private slots:
         QTemporaryDir models;
         QVERIFY(models.isValid());
         write_placeholder_model(models.path());
+        const QString PreviousRoot = ppocr_models::models_root();
         ppocr_models::set_models_root_for_test(models.path());
         set_oneocr_available_for_test(false);
-        const auto restore = qScopeGuard([] {
-            ppocr_models::set_models_root_for_test({});
+        const auto restore = qScopeGuard([PreviousRoot] {
+            ppocr_models::set_models_root_for_test(PreviousRoot);
             set_oneocr_available_for_test(std::nullopt);
         });
         const std::vector<std::pair<QString, QString>> languages = {
@@ -1345,6 +1361,18 @@ private slots:
         auto *window = show_text_recognition(table_image());
         QTRY_VERIFY_WITH_TIMEOUT(window->copy_button->isEnabled(), 30000);
         QVERIFY(!window->view_switch->isHidden());
+        if (window->table_view->table().rows != 3 || window->table_view->table().columns != 3) {
+            QStringList Cells;
+            for (const auto& Cell : window->table_view->table().cells)
+                Cells << QString("(%1,%2)=%3").arg(Cell.row).arg(Cell.column).arg(Cell.text);
+            qWarning().noquote() << "[Test:Table] Engine=" << OCRManager::instance().get_current_engine().value_or(QString())
+                                 << "Text=" << window->text_edit->toPlainText() << "Cells=" << Cells.join("; ");
+            // Synthetic fixture only: preserve geometry needed to reproduce a
+            // model/row-grouping failure without any captured desktop content.
+            const auto Diagnostic = recognize_text(table_image());
+            for (const auto& Line : Diagnostic.data)
+                qWarning().noquote() << "[Test:Table] OCR=" << Line.text << "Box=" << Line.box;
+        }
         QCOMPARE(window->table_view->table().rows, 3);
         QCOMPARE(window->table_view->table().columns, 3);
         window->close();

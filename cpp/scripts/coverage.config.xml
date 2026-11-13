@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Configuration>
+  <CodeCoverage>
+    <!-- The hosted runner is elevated; normal tests use a restricted medium token.
+         Permit their coverage IPC without changing the application's token checks.
+         https://github.com/microsoft/codecoverage/blob/main/docs/configuration.md -->
+    <AllowLowIntegrityProcesses>True</AllowLowIntegrityProcesses>
+    <EnableDynamicNativeInstrumentation>True</EnableDynamicNativeInstrumentation>
+  </CodeCoverage>
+</Configuration>

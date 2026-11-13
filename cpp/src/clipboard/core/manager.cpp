@@ -8,6 +8,8 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 
+#include "core/feature_settings.h"
+
 namespace jietuba::clipboard {
 namespace {
 constexpr size_t ERROR_LEN = 1024;
@@ -52,6 +54,7 @@ QString format_bytes(qint64 n) {
 
 // Closed when the last user lets go.
 std::shared_ptr<JbClipboard> open_backend(const QString &db_path, char *error) {
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::ClipboardHistory)) return nullptr;
     auto *handle = jb_clipboard_open(utf8(db_path).constData(), error, ERROR_LEN);
     if (!handle) return nullptr;
     return std::shared_ptr<JbClipboard>(handle, [](JbClipboard *backend) {
@@ -69,6 +72,7 @@ ClipboardManager &ClipboardManager::instance() {
 }
 
 ClipboardManager::ClipboardManager() {
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::ClipboardHistory)) return;
     char error[ERROR_LEN] = {};
     auto backend = open_backend(resolve_db_path({}), error);
     if (!backend) {
@@ -106,7 +110,7 @@ QString ClipboardManager::default_db_path() {
     // data folder (%APPDATA%), shared with the Python version.
     QString base = qEnvironmentVariable("APPDATA");
     if (base.isEmpty()) base = QDir(QDir::homePath()).filePath("AppData/Roaming");
-    return QDir::toNativeSeparators(QDir(base).filePath("pyclipboard/clipboard.db"));
+    return QDir::toNativeSeparators(QDir(base).filePath("QckSnip/clipboard/clipboard.db"));
 }
 
 QString ClipboardManager::resolve_db_path(const QString &db_path) const {
@@ -116,6 +120,7 @@ QString ClipboardManager::resolve_db_path(const QString &db_path) const {
 }
 
 bool ClipboardManager::reset_storage(const QString &db_path) {
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::ClipboardHistory)) return false;
     const bool was_monitoring = is_monitoring() || resume_monitoring_after_reset_;
     resume_monitoring_after_reset_ = false;
     drop_backend();
@@ -206,6 +211,7 @@ void ClipboardManager::on_item(const ClipboardItem &item, qint64 encoded) {
 }
 
 void ClipboardManager::start_monitoring(Callback callback) {
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::ClipboardHistory)) return;
     const auto backend = this->backend();
     if (!backend) {
         log_error(T("管理器不可用"), "Clipboard");

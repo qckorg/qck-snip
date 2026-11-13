@@ -44,6 +44,10 @@ jobs:
           "code=$code" | Add-Content $env:GITHUB_OUTPUT
           if ($code -eq 'false') { 'Documentation only: build and tests skipped.' | Add-Content $env:GITHUB_STEP_SUMMARY }
 
+      - name: Native host security preflight
+        if: steps.scope.outputs.code == 'true'
+        run: .\scripts\check_native_host.ps1
+
       - if: steps.scope.outputs.code == 'true'
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
@@ -66,7 +70,8 @@ jobs:
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: cpp/native -> ../build/coverage-build/native
-          save-if: ${{ github.ref == 'refs/heads/master2' }}
+          save-if: ${{ github.ref == 'refs/heads/master2' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) }}
+          cache-on-failure: true
 
       - name: Install coverage tools
         if: steps.scope.outputs.code == 'true'
@@ -101,28 +106,93 @@ jobs:
       # built by the Lite single exe workflow.
       - id: build
         if: steps.scope.outputs.code == 'true'
-        run: .\scripts\coverage.ps1 -BuildOnly
+        run: .\scripts\coverage.ps1 -BuildOnly -PrivilegedHost
+
+      - name: Administrator task registration smoke check
+        if: always() && steps.build.outcome == 'success'
+        run: .\scripts\smoke_admin_task.ps1
+
+      # Exercise OCR UI against the supplied pack before parallel tests can
+      # install their own models beside the shared executables.
+      - name: OCR result-window integration
+        if: always() && steps.build.outcome == 'success'
+        run: .\scripts\coverage.ps1 -SkipBuild -TestFilter '^result_windows$'
+
+      - name: OCR result-window reports
+        if: always() && steps.build.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ocr-result-window-reports
+          path: cpp/build/coverage-build/test_reports/result_windows.txt
+          if-no-files-found: error
 
       - id: tests
-        if: steps.scope.outputs.code == 'true'
-        # Four at a time on the runner's four cores; the clipboard tests take turns (RESOURCE_LOCK).
-        run: .\scripts\coverage.ps1 -SkipBuild -Jobs 4 -TestExclude '_desktop$|_windows_parity$'
-
-      # ctest does not show QtTest's own report; run each failed test again with it written to a file.
-      - if: failure() && steps.tests.outcome == 'failure'
-        run: .\scripts\show_failed_tests.ps1
-
-      # Tests on the real desktop (-platform windows) inject input, register hotkeys and capture
-      # the screen. The runner's interactive session runs them for their coverage; they stay
-      # required on developer machines, and a failure here does not fail the check.
-      - id: desktop
         if: always() && steps.build.outcome == 'success'
-        continue-on-error: true
-        run: .\scripts\coverage.ps1 -SkipBuild -Append -TestFilter '_desktop$|_windows_parity$'
+        # Four at a time on the runner's four cores; the clipboard tests take turns (RESOURCE_LOCK).
+        run: .\scripts\coverage.ps1 -SkipBuild -Jobs 4 -TestExclude '_desktop$|_windows_parity$|^qck_ocr_privileged_host$'
+
+      # Print the original QtTest reports without repeating expensive native/desktop suites.
+      - if: failure() && steps.tests.outcome == 'failure'
+        run: .\scripts\show_failed_tests.ps1 -NoRerun
+
+      - name: Functional test reports
+        if: always() && steps.build.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: functional-test-reports
+          path: |
+            cpp/build/coverage-build/test_reports
+            cpp/build/coverage-build/Testing/Temporary/LastTest.log
+          if-no-files-found: error
+
+      - id: privileged_tests
+        name: Elevated native-host regression
+        if: always() && steps.build.outcome == 'success'
+        run: .\scripts\coverage.ps1 -SkipBuild -Append -PrivilegedHost -TestFilter '^qck_ocr_privileged_host$'
+
+      - if: always() && steps.privileged_tests.outcome == 'failure'
+        run: .\scripts\show_failed_tests.ps1 -NoRerun
+
+      # Large-scale layout fixtures need room for their minimum window sizes.
+      # This changes only the disposable hosted runner's display.
+      - id: desktop_setup
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          Set-DisplayResolution -Width 1920 -Height 1080 -Force
+          Add-Type -AssemblyName System.Windows.Forms
+          $Bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          Write-Output "[Test:Desktop] Bounds=$Bounds"
+          if ($Bounds.Width -lt 1920 -or $Bounds.Height -lt 1080) { throw 'Desktop resolution setup failed.' }
+
+      # Normal-user desktop capture/layout suites remain serialized and required.
+      - id: desktop
+        if: always() && steps.build.outcome == 'success' && steps.desktop_setup.outcome == 'success'
+        run: .\scripts\coverage.ps1 -SkipBuild -Append -TestFilter '_desktop$|_windows_parity$' -TestExclude '^(input_hooks|main_app|screen_annotation|scroll_capture|shortcut_manager)_desktop$'
 
       - if: always() && steps.desktop.outcome == 'failure'
         continue-on-error: true
-        run: .\scripts\show_failed_tests.ps1
+        run: .\scripts\show_failed_tests.ps1 -NoRerun
+
+      # These retained suites inject into the hosted shell/foreground windows.
+      # Match their original elevated CI context: UIPI blocks medium SendInput
+      # into a higher-integrity target. Production OCR guards remain enforced.
+      - id: desktop_input
+        name: Interactive input on the hosted desktop
+        if: always() && steps.build.outcome == 'success' && steps.desktop_setup.outcome == 'success'
+        run: .\scripts\coverage.ps1 -SkipBuild -Append -PrivilegedHost -TestFilter '^(input_hooks|main_app|screen_annotation|scroll_capture|shortcut_manager)_desktop$'
+
+      - if: always() && steps.desktop_input.outcome == 'failure'
+        run: .\scripts\show_failed_tests.ps1 -NoRerun
+
+      - name: Complete test reports
+        if: always() && steps.build.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: complete-test-reports
+          path: |
+            cpp/build/coverage-build/test_reports
+            cpp/build/coverage-build/Testing/Temporary/LastTest.log
+          if-no-files-found: error
 
       # A ratchet on the whole of cpp/src: raise it as tests are added, never lower it. Changed
       # lines need 75%, and a changed source file no test runs at all fails.
@@ -154,3 +224,16 @@ jobs:
             cpp/build/coverage/coverage.xml
             cpp/build/coverage/summary.txt
           if-no-files-found: ignore
+      - name: Capture profile build and service checks
+        if: always() && steps.build.outcome == 'success'
+        run: .\scripts\check_capture_profile.ps1
+
+      - name: Capture test reports
+        if: always() && steps.build.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: capture-test-reports
+          path: |
+            cpp/build/coverage-build/test_reports
+            cpp/build/coverage-build/Testing/Temporary/LastTest.log
+          if-no-files-found: error

@@ -8,6 +8,9 @@
 #include <QGuiApplication>
 #include <QOperatingSystemVersion>
 #include <QTimer>
+#include <QScopeGuard>
+#include <limits>
+#include <vector>
 #include <cmath>
 #include <thread>
 #ifdef Q_OS_WIN
@@ -188,6 +191,67 @@ bool terminate_process_by_pid(qint64 pid) {
     return ok;
 #else
     Q_UNUSED(pid);
+    return false;
+#endif
+}
+
+namespace {
+#ifdef Q_OS_WIN
+std::vector<BYTE> GetProcessUser(HANDLE Process) {
+    HANDLE Token = nullptr;
+    if (!OpenProcessToken(Process, TOKEN_QUERY, &Token)) return {};
+    const auto Cleanup = qScopeGuard([&] { CloseHandle(Token); });
+    DWORD Length = 0;
+    GetTokenInformation(Token, TokenUser, nullptr, 0, &Length);
+    std::vector<BYTE> Buffer(Length);
+    if (!Length || !GetTokenInformation(Token, TokenUser, Buffer.data(), Length, &Length)) return {};
+    return Buffer;
+}
+
+HANDLE OpenInstance(qint64 Pid, std::optional<quint64> CreationTime, DWORD Access) {
+    if (Pid <= 0 || Pid > std::numeric_limits<DWORD>::max() || Pid == GetCurrentProcessId()) return nullptr;
+    HANDLE Process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | Access, FALSE, static_cast<DWORD>(Pid));
+    if (!Process) return nullptr;
+    bool Valid = false;
+    const auto Cleanup = qScopeGuard([&] { if (!Valid) CloseHandle(Process); });
+    FILETIME Created{}, Exited{}, Kernel{}, User{};
+    if (!GetProcessTimes(Process, &Created, &Exited, &Kernel, &User)) return nullptr;
+    const quint64 ActualTime = (quint64(Created.dwHighDateTime) << 32) | Created.dwLowDateTime;
+    if (CreationTime && *CreationTime != ActualTime) return nullptr;
+    std::wstring Image(32768, L'\0'), OwnImage(32768, L'\0');
+    DWORD ImageLength = static_cast<DWORD>(Image.size());
+    const DWORD OwnLength = GetModuleFileNameW(nullptr, OwnImage.data(), static_cast<DWORD>(OwnImage.size()));
+    if (!OwnLength || OwnLength >= OwnImage.size() || !QueryFullProcessImageNameW(Process, 0, Image.data(), &ImageLength)) return nullptr;
+    if (CompareStringOrdinal(Image.data(), static_cast<int>(ImageLength), OwnImage.data(), static_cast<int>(OwnLength), TRUE) != CSTR_EQUAL) return nullptr;
+    const auto ProcessUser = GetProcessUser(Process), CurrentUser = GetProcessUser(GetCurrentProcess());
+    if (ProcessUser.empty() || CurrentUser.empty() ||
+        !EqualSid(reinterpret_cast<const TOKEN_USER*>(ProcessUser.data())->User.Sid,
+                  reinterpret_cast<const TOKEN_USER*>(CurrentUser.data())->User.Sid)) return nullptr;
+    if (WaitForSingleObject(Process, 0) == WAIT_OBJECT_0) return nullptr;
+    Valid = true;
+    return Process;
+}
+#endif
+}
+
+bool MatchesInstance(qint64 Pid, std::optional<quint64> CreationTime) {
+#ifdef Q_OS_WIN
+    HANDLE Process = OpenInstance(Pid, CreationTime, SYNCHRONIZE);
+    if (!Process) return false;
+    CloseHandle(Process);
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool TerminateInstance(qint64 Pid, std::optional<quint64> CreationTime) {
+#ifdef Q_OS_WIN
+    HANDLE Process = OpenInstance(Pid, CreationTime, PROCESS_TERMINATE | SYNCHRONIZE);
+    if (!Process) return false;
+    const auto Cleanup = qScopeGuard([&] { CloseHandle(Process); });
+    return TerminateProcess(Process, 0) != FALSE;
+#else
     return false;
 #endif
 }

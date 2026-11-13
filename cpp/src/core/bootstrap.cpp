@@ -1,4 +1,6 @@
 #include "core/bootstrap.h"
+#include "core/feature_settings.h"
+#include <qck/Product.h>
 #include "clipboard/ui/windows/clipboard_window.h"
 #include "core/shortcut_manager.h"
 #include "ui/dialogs.h"
@@ -38,10 +40,11 @@ namespace {
 std::optional<std::pair<qint64, std::optional<quint64>>> read_instance_record(const QString &pid_file) {
     QFile file(pid_file);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return std::nullopt;
+    if (file.size() > 128) return std::nullopt;
     QStringList lines;
     for (const auto &line : QString::fromUtf8(file.readAll()).split('\n'))
         if (!line.trimmed().isEmpty()) lines << line.trimmed();
-    if (lines.isEmpty()) return std::nullopt;
+    if (lines.isEmpty() || lines.size() > 2) return std::nullopt;
     bool ok = false;
     const qint64 pid = lines[0].toLongLong(&ok);
     // A damaged or unknown file counts as no record and is rewritten.
@@ -53,23 +56,6 @@ std::optional<std::pair<qint64, std::optional<quint64>>> read_instance_record(co
         create_time = value;
     }
     return std::make_pair(pid, create_time);
-}
-
-// Whether the record really is an older instance of this program. The PID file easily
-// goes stale (killed or crashed processes never clean it up) and Windows reuses PIDs
-// eagerly, so a PID alone could kill an unrelated process.
-bool is_our_old_instance(const std::pair<qint64, std::optional<quint64>> &record, qint64 my_pid, const QString &my_image_name) {
-    const auto [pid, create_time] = record;
-    if (pid == my_pid) return false;
-    const auto live = get_process_identity(pid);
-    // Gone or inaccessible: a stale record.
-    if (!live) return false;
-    const auto [live_create_time, live_image_name] = *live;
-    // (PID, creation time) identifies one process; the most reliable test.
-    if (create_time) return live_create_time == *create_time;
-    // Older records lack the creation time: the image name must match this executable.
-    if (my_image_name.isEmpty()) return false;
-    return live_image_name.toLower() == my_image_name.toLower();
 }
 
 // This executable's file name; QCoreApplication does not exist yet.
@@ -101,12 +87,10 @@ void ensure_single_instance() {
     const qint64 my_pid = static_cast<qint64>(GetCurrentProcessId());
     const auto my_identity = get_process_identity(my_pid);
     const std::optional<quint64> my_create_time = my_identity ? std::optional<quint64>(my_identity->first) : std::nullopt;
-    const auto my_image_name = my_identity ? my_identity->second : exe_file_name();
 
     if (const auto record = QFile::exists(pid_file) ? read_instance_record(pid_file) : std::nullopt) {
-        if (is_our_old_instance(*record, my_pid, my_image_name)) {
-            if (terminate_process_by_pid(record->first)) log_info(T("已终止旧实例 (PID {old_pid})", {{"old_pid", record->first}}), "SingleInstance");
-            else log_warning(T("旧实例 (PID {old_pid}) 终止失败", {{"old_pid", record->first}}), "SingleInstance");
+        if (TerminateInstance(record->first, record->second)) {
+            log_info(T("已终止旧实例 (PID {old_pid})", {{"old_pid", record->first}}), "SingleInstance");
         } else {
             log_debug(T("实例记录 (PID {old_pid}) 未通过身份校验，不终止", {{"old_pid", record->first}}), "SingleInstance");
         }
@@ -129,6 +113,7 @@ void ensure_single_instance() {
 }
 
 bool hand_off_to_admin_task(int poll_ms, int timeout_ms, const QString &pid_file) {
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup)) return false;
     // The task's own instance is elevated, and after the account drops to a standard user
     // the state is STANDARD, so neither hands off again.
     if (elevation::elevation_state() != elevation::CAN_ELEVATE) return false;
@@ -153,7 +138,7 @@ bool hand_off_to_admin_task(int poll_ms, int timeout_ms, const QString &pid_file
     while (GetTickCount64() < deadline) {
         Sleep(static_cast<DWORD>(poll_ms));
         const auto record = QFile::exists(path) ? read_instance_record(path) : std::nullopt;
-        if (record && record != before && record->first != static_cast<qint64>(GetCurrentProcessId())) {
+        if (record && record != before && MatchesInstance(record->first, record->second)) {
             log_info(T("已交给管理员实例 (PID {pid})", {{"pid", record->first}}), "Elevation");
             return true;
         }
@@ -174,20 +159,22 @@ void PreloadManager::build_and_start() {
     // and the PNG encoder) have nothing to warm in a native build and are left out.
     // An elevated instance points a task left on a program that is gone at itself; schtasks runs
     // on a worker so start-up is not held.
-    if (cfg->get_run_as_admin()) steps_.push_back([] {
+    if (qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup) && cfg->get_run_as_admin()) steps_.push_back([] {
         std::thread([] { run_thread_guarded("AdminTask", [] { elevation::repair_task(); }); }).detach();
         return false;
     });
     // Before the engine setting, which resolves the engine by what is installed.
-    if (!bundled_runtime::data().isEmpty()) steps_.push_back([this] { return seed_bundled_runtime(); });
+    if (qck::FeatureSettings::IsEnabled(qck::Feature::Ocr) && !bundled_runtime::data().isEmpty())
+        steps_.push_back([this] { return seed_bundled_runtime(); });
     // The engine preference is read here and handed to OCR, so recognition threads never read settings.
-    steps_.push_back([this] { return apply_ocr_engine_setting(); });
+    if (qck::FeatureSettings::IsEnabled(qck::Feature::Ocr))
+        steps_.push_back([this] { return apply_ocr_engine_setting(); });
     // Files of drags from the last run that exited before removing them; nothing can be dragged yet.
     steps_.push_back([] {
         DragOutMimeData::remove_stale_folders(DragOutMimeData::default_temp_root(), 0);
         return false;
     });
-    if (cfg->get_preload_clipboard()) steps_.push_back([this] {
+    if (qck::FeatureSettings::IsEnabled(qck::Feature::ClipboardHistory) && cfg->get_preload_clipboard()) steps_.push_back([this] {
         init_clipboard_manager();
         return false;
     });
@@ -195,7 +182,8 @@ void PreloadManager::build_and_start() {
     if (cfg->get_preload_screenshot() && cfg->get_capture_engine() != "mss")
         steps_.push_back([this] { return preload_hdr_session(); });
     if (cfg->get_preload_toolbar()) steps_.push_back([this] { return preload_toolbar_assets(); });
-    if (cfg->get_preload_ocr()) steps_.push_back([this] { return preload_ocr_engine(); });
+    if (qck::FeatureSettings::IsEnabled(qck::Feature::Ocr) && cfg->get_preload_ocr())
+        steps_.push_back([this] { return preload_ocr_engine(); });
     if (cfg->get_preload_settings()) steps_.push_back([this] {
         preload_settings();
         return false;
@@ -339,6 +327,7 @@ bool PreloadManager::show_main_window_on_start() {
 void PreloadManager::init_clipboard_manager() { app_->set_clipboard_monitoring_enabled(config_->get_clipboard_enabled()); }
 
 void PreloadManager::preload_clipboard_window() {
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::ClipboardHistory)) return;
     if (!config_->get_clipboard_enabled()) {
         log_debug(T("剪贴板功能已禁用，跳过剪贴板窗口预创建"), "Clipboard");
         return;
@@ -363,9 +352,11 @@ int run(int argc, char **argv) {
     setup_environment();
     // 2./3. Module paths and pinning onefile resources do not apply to a native build.
     // 4. The taskbar identity, before QApplication exists.
-    set_app_user_model_id("jietuba.app");
+    set_app_user_model_id(QString::fromUtf8(qck::Product::AppId));
     // 5. On the first start with a data folder, what older versions stored elsewhere, before anything reads it.
     data_folder::migrate(data_location(), data_folder::default_sources(data_location()));
+    // Resolve settings once, before any feature worker can access the immutable policy.
+    (void)qck::FeatureSettings::GetPolicy();
     // 6. In admin mode the elevated instance started by the scheduled task runs instead.
     if (open_local_settings()->value("app/run_as_admin", false).toBool() && hand_off_to_admin_task())
         return 0;

@@ -2,17 +2,23 @@
 #include "core/bootstrap.h"
 #include "core/constants.h"
 #include "core/elevation.h"
+#include "core/feature_settings.h"
+#include "core/platform_utils.h"
 #include "core/global_hotkey.h"
 #include "core/i18n.h"
 #include "core/logger.h"
 #include "settings/tool_settings.h"
 #include <QDir>
+#include <QApplication>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTemporaryDir>
+#include <QProcess>
+#include <QScopeGuard>
 #include <QTest>
+#include <cstdio>
 #include <stdexcept>
 #include <windows.h>
 
@@ -36,8 +42,10 @@ struct FakeSchtasks {
     std::function<void()> on_run;
 
     std::pair<int, QByteArray> elevated(const QStringList &args) {
+        if (args.size() != 1) return {1, {}}; // No definition, path or task name crosses UAC.
         elevated_calls << args.value(0);
         if (elevated_code) return {*elevated_code, {}};
+        if (args.first() == "/Create") created_xml = elevation::build_task_xml(EXE, USER).toUtf8();
         return (*this)(args);
     }
 
@@ -51,14 +59,6 @@ struct FakeSchtasks {
             return {0, elevation::build_task_xml(*command, USER).replace("\n", "\r\r\n").toUtf8()};
         }
         if (verb == "/Create") {
-            // Opened like schtasks does: sharing reads only, so a writer still holding the file fails here.
-            const std::wstring path = args.value(args.indexOf("/XML") + 1).toStdWString();
-            HANDLE handle = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
-            if (handle == INVALID_HANDLE_VALUE) return {1, {}};
-            char buffer[8192];
-            DWORD read = 0;
-            while (ReadFile(handle, buffer, sizeof(buffer), &read, nullptr) && read > 0) created_xml.append(buffer, static_cast<qsizetype>(read));
-            CloseHandle(handle);
             command = EXE;
         }
         if (verb == "/Delete") {
@@ -77,12 +77,17 @@ struct ElevationFixture {
         elevation::set_schtasks_runner_for_test([fake = fake](const QStringList &args) { return (*fake)(args); });
         elevation::set_elevated_schtasks_runner_for_test([fake = fake](const QStringList &args) { return fake->elevated(args); });
         elevation::set_environment_for_test(EXE, state, USER);
+        elevation::SetTaskWriterForTest([fake = fake](bool Install, const QString& Xml) {
+            if (Install) fake->created_xml = Xml.toUtf8();
+            return (*fake)({Install ? "/Create" : "/Delete"});
+        });
     }
     ~ElevationFixture() {
         elevation::set_schtasks_runner_for_test({});
         elevation::set_elevated_schtasks_runner_for_test({});
         elevation::set_environment_for_test(std::nullopt, std::nullopt, std::nullopt);
         elevation::set_self_launcher_for_test({});
+        elevation::SetTaskWriterForTest({});
     }
 };
 
@@ -96,6 +101,16 @@ void write_record(const QString &path, const QByteArray &content) {
 class CoreTests : public QObject {
     Q_OBJECT
     QJsonObject fixtures_;
+    void CheckAdminRefusal() {
+        ElevationFixture Fixture(elevation::ELEVATED);
+        QVERIFY(!elevation::install_task());
+        QVERIFY(!elevation::run_task());
+        QVERIFY(!elevation::run_self_elevated());
+        QVERIFY(!hand_off_to_admin_task(1, 1));
+        QVERIFY(!elevation::apply_startup(true, true, false, true));
+        QVERIFY(Fixture.fake->calls.isEmpty());
+        QVERIFY(Fixture.fake->elevated_calls.isEmpty());
+    }
 private slots:
     void initTestCase() {
         QFile file(JIETUBA_CORE_FIXTURE_PATH);
@@ -173,16 +188,31 @@ private slots:
         QVERIFY(!cases.isEmpty());
         for (const auto &value : cases) {
             const auto c = value.toObject();
-            QCOMPARE(elevation::build_task_xml(c["command"].toString(), c["user"].toString()), c["expected"].toString());
+            // The upstream sample's only intentional schema difference is fork branding.
+            QCOMPARE(elevation::build_task_xml(c["command"].toString(), c["user"].toString()),
+                     c["expected"].toString().replace("<Description>Jietuba</Description>", "<Description>qck-snip</Description>"));
         }
     }
-    void elevationInstallWritesUtf16WithBom() {
+    void ElevationInstallRegistersInMemory() {
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup)) { CheckAdminRefusal(); return; }
         ElevationFixture fixture(elevation::ELEVATED);
+        const QString LegacyPath = QDir::temp().filePath(QString("jietuba_task_%1.xml").arg(QCoreApplication::applicationPid()));
+        write_record(LegacyPath, "attacker-controlled definition");
+        const auto Cleanup = qScopeGuard([&] { QFile::remove(LegacyPath); });
         QVERIFY(elevation::install_task());
         const QByteArray xml = fixture.fake->created_xml;
-        QVERIFY(xml.startsWith(QByteArray("\xff\xfe", 2)));
-        QCOMPARE(QString::fromUtf16(reinterpret_cast<const char16_t *>(xml.constData() + 2), (xml.size() - 2) / 2), elevation::build_task_xml(EXE, USER));
-        QCOMPARE(elevation::task_name(), QString("Jietuba RunAsAdmin (user)"));
+        QCOMPARE(QString::fromUtf8(xml), elevation::build_task_xml(EXE, USER));
+        QCOMPARE(elevation::task_name(), QString("QckSnip RunAsAdmin (user)"));
+        QFile Trap(LegacyPath);
+        QVERIFY(Trap.open(QIODevice::ReadOnly));
+        QCOMPARE(Trap.readAll(), QByteArray("attacker-controlled definition"));
+    }
+    void TaskDefinitionValidatesWithoutRegistration() {
+        QVERIFY(elevation::ValidateTask());
+    }
+    void TaskHelperRefusesTheSandbox() {
+        QCOMPARE(elevation::RunTaskHelper(true), 1);
+        QCOMPARE(elevation::RunTaskHelper(false), 1);
     }
     void elevationQueryAndSelfMatch() {
         ElevationFixture fixture(elevation::ELEVATED);
@@ -204,6 +234,7 @@ private slots:
         QVERIFY(!elevation::remove_task());
     }
     void elevationOnlyUnelevatedChangesAskForUac() {
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup)) { CheckAdminRefusal(); return; }
         for (const auto &[state, elevated] : {std::pair{elevation::ELEVATED, false}, std::pair{elevation::CAN_ELEVATE, true}}) {
             ElevationFixture fixture(state);
             QVERIFY(elevation::install_task());
@@ -215,6 +246,7 @@ private slots:
     }
     // The return value is whether admin mode is in effect.
     void elevationApplyStartup() {
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup)) { CheckAdminRefusal(); return; }
         {
             ElevationFixture fixture(elevation::ELEVATED);
             QVERIFY(elevation::apply_startup(true, true, false));
@@ -259,6 +291,7 @@ private slots:
     }
     // Applying again with the task already running this program changes nothing and asks nothing.
     void elevationApplyStartupLeavesAWorkingTask() {
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup)) { CheckAdminRefusal(); return; }
         ElevationFixture fixture(elevation::CAN_ELEVATE);
         fixture.fake->command = EXE;
         QVERIFY(elevation::apply_startup(true, true, true, true));
@@ -279,6 +312,7 @@ private slots:
         QVERIFY(!elevation::task_is_stale(QCoreApplication::applicationFilePath()));
     }
     void elevationRepairPointsAStaleTaskAtThisProgram() {
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup)) { CheckAdminRefusal(); return; }
         {
             ElevationFixture fixture(elevation::ELEVATED);
             fixture.fake->command = GONE;
@@ -304,14 +338,30 @@ private slots:
         QVERIFY(fixture.fake->elevated_calls.isEmpty());
     }
     void elevationHandOff() {
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup)) { CheckAdminRefusal(); return; }
         QTemporaryDir dir;
         const QString record = dir.filePath("jietuba_lite.exe.pid");
+        QProcess Child;
+        Child.start(QCoreApplication::applicationFilePath(), {"--QckHandoffChild"});
+        QVERIFY(Child.waitForStarted());
+        QVERIFY(Child.waitForReadyRead());
+        const auto Cleanup = qScopeGuard([&] { Child.kill(); Child.waitForFinished(); });
+        const auto Identity = get_process_identity(Child.processId());
+        QVERIFY(Identity);
+        const QByteArray ReadyRecord = QByteArray::number(Child.processId()) + "\n" + QByteArray::number(Identity->first) + "\n";
         {
             ElevationFixture fixture(elevation::CAN_ELEVATE);
             fixture.fake->command = EXE;
             write_record(record, "111\n5\n");
-            fixture.fake->on_run = [&record] { write_record(record, "222\n9\n"); };
+            fixture.fake->on_run = [&] { write_record(record, ReadyRecord); };
             QVERIFY(hand_off_to_admin_task(10, 200, record));
+        }
+        {
+            ElevationFixture Fixture(elevation::CAN_ELEVATE);
+            Fixture.fake->command = EXE;
+            write_record(record, "111\n5\n");
+            Fixture.fake->on_run = [&] { write_record(record, "4294967297\n99\n"); };
+            QVERIFY(!hand_off_to_admin_task(10, 50, record));
         }
         {
             ElevationFixture fixture(elevation::CAN_ELEVATE);
@@ -336,7 +386,7 @@ private slots:
             int launched = 0;
             elevation::set_self_launcher_for_test([&] {
                 ++launched;
-                write_record(record, "222\n9\n");
+                write_record(record, ReadyRecord);
                 return true;
             });
             QVERIFY(hand_off_to_admin_task(10, 200, record));
@@ -382,5 +432,15 @@ private:
     }
 };
 
-QTEST_MAIN(CoreTests)
+int main(int argc, char** argv) {
+    if (argc == 2 && QByteArray(argv[1]) == "--QckHandoffChild") {
+        std::fputs("ready\n", stdout);
+        std::fflush(stdout);
+        Sleep(30000);
+        return 0;
+    }
+    QApplication App(argc, argv);
+    CoreTests Tests;
+    return QTest::qExec(&Tests, argc, argv);
+}
 #include "test_core.moc"

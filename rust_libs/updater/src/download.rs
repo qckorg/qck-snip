@@ -11,7 +11,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub const LATEST: &str = "https://api.github.com/repos/1003129155/jietuba/releases/latest";
+pub const LATEST: &str = "https://api.github.com/repos/qckorg/qck-snip/releases/latest";
 pub fn parse_release(data: &Value, arch: Arch, variant: AppVariant) -> Result<Release> {
     if data.get("draft").and_then(Value::as_bool) == Some(true)
         || data.get("prerelease").and_then(Value::as_bool) == Some(true)
@@ -65,7 +65,7 @@ pub fn parse_release(data: &Value, arch: Arch, variant: AppVariant) -> Result<Re
             .chars()
             .take(12000)
             .collect(),
-        url: format!("https://github.com/1003129155/jietuba/releases/tag/{tag}"),
+        url: format!("https://github.com/qckorg/qck-snip/releases/tag/{tag}"),
         asset_name: filename,
         arch,
         artifact: DownloadArtifact {
@@ -76,7 +76,7 @@ pub fn parse_release(data: &Value, arch: Arch, variant: AppVariant) -> Result<Re
 }
 pub fn client() -> Result<reqwest::Client> {
     reqwest::Client::builder()
-        .user_agent("jietuba-updater")
+        .user_agent("qck-snip-updater")
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(900))
         .build()
@@ -110,7 +110,7 @@ mod tests {
     #[test]
     fn missing_lite_package_does_not_fall_back_to_full() {
         let payload = json!({"tag_name": "release-2.2.0", "assets": [{
-            "name": "jietuba_pp-release-2.2.0-x64.zip",
+            "name": "qck-snip-full-release-2.2.0-x64.zip",
             "browser_download_url": "https://example.com/full.zip",
         }]});
         assert_eq!(

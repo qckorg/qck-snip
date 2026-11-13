@@ -1,0 +1,6 @@
+#pragma once
+#cmakedefine01 QCK_ENABLE_OCR
+#cmakedefine01 QCK_ENABLE_TRANSLATION
+#cmakedefine01 QCK_ENABLE_CLIPBOARD_HISTORY
+#cmakedefine01 QCK_ENABLE_ADMIN_STARTUP
+#cmakedefine01 QCK_ENABLE_UPDATES

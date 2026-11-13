@@ -52,10 +52,11 @@ private:
 };
 
 // Shows the light on the layer from the input hub's mouse events: the position and the buttons come
-// from the system hook, so it works while the layer passes the mouse through, nothing runs while the
-// pointer rests, and a click shorter than a frame is not missed. A timer runs only while a ring spreads.
+// from the system hook, so it works while the layer passes the mouse through, and a click shorter
+// than a frame is not missed. Rings animate only while spreading.
 // A hook installed after ours can keep the events from it (a live wallpaper does while the desktop has
-// the focus), so the system's cursor location events move the light as well.
+// the focus), so system cursor events also move the light. While enabled, a fallback sampler catches
+// physical cursor changes even when neither event source reports them; unchanged samples do not redraw.
 class CursorHighlight : public QObject {
     Q_OBJECT
 public:
@@ -79,6 +80,7 @@ public:
     void on_cursor_moved();
 private:
     void collect_pointer();
+    void ReadCursorPosition(bool MovementOnly = false);
     void show_at(const QPoint &global);
     void animate();
     InputHub *hub() const;
@@ -91,6 +93,8 @@ private:
     qreal size_ = 1.0;
     bool ripples_ = true;
     QTimer ripple_timer_;
+    QTimer CursorFallbackTimer;
+    std::optional<QPoint> LastSystemPosition;
     QElapsedTimer clock_;
     // The last position and the buttons held, as the events told.
     QPoint last_pos_;

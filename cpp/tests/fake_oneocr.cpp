@@ -5,6 +5,7 @@
 // FakeWordMode picks what the line's words are: none (the default), "fake" and "line", or the
 // words with one failing call (see WordMode).
 #include <cstdint>
+#include <windows.h>
 
 #define EXPORT extern "C" __declspec(dllexport)
 
@@ -18,11 +19,13 @@ int64_t max_line_count = -1;
 // 0: no words; 1: the two words; 2: the second word cannot be fetched; 3: the second word has no
 // text; 4: the second word has no box.
 int64_t word_mode = 0;
+wchar_t DllDirectory[32768]{};
 }
 
 // What the last OcrProcessOptionsSetMaxRecognitionLineCount call set; -1 when never called.
 EXPORT int64_t FakeMaxLineCount() { return max_line_count; }
 EXPORT void FakeWordMode(int64_t mode) { word_mode = mode; }
+EXPORT const wchar_t* FakeDllDirectory() { return DllDirectory; }
 
 EXPORT int64_t CreateOcrInitOptions(int64_t *options) {
     *options = 1;
@@ -30,6 +33,7 @@ EXPORT int64_t CreateOcrInitOptions(int64_t *options) {
 }
 EXPORT int64_t OcrInitOptionsSetUseModelDelayLoad(int64_t, char) { return 0; }
 EXPORT int64_t CreateOcrPipeline(const char *, const char *, int64_t, int64_t *pipeline) {
+    GetDllDirectoryW(static_cast<DWORD>(sizeof(DllDirectory) / sizeof(wchar_t)), DllDirectory);
     *pipeline = 2;
     return 0;
 }

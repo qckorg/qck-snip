@@ -1,4 +1,5 @@
 #include "core/http_client.h"
+#include "core/feature_settings.h"
 #include <QStringList>
 #include <algorithm>
 #include <memory>
@@ -117,6 +118,13 @@ HttpCancellationScope::HttpCancellationScope(HttpCancellation *cancellation) : p
 HttpCancellationScope::~HttpCancellationScope() { current_cancellation = previous_; }
 
 HttpResponse http_request(const QString &method, const QString &url, const HttpHeaders &headers, const QByteArray &body, double timeout_seconds) {
+    // This adapter is used by translation providers; updater/model transport is separate.
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::Translation)) {
+        HttpResponse Response;
+        Response.kind = HttpResponse::NetworkError;
+        Response.reason = "Translation disabled by feature policy";
+        return Response;
+    }
     const HttpCancellation *cancellation = current_cancellation;
     if (cancellation && cancellation->cancelled()) return failure(ERROR_WINHTTP_OPERATION_CANCELLED);
     const auto wide_url = url.toStdWString();

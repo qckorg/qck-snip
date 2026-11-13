@@ -1,4 +1,5 @@
 #include "core/elevation.h"
+#include "core/feature_settings.h"
 #include "core/constants.h"
 #include "core/logger.h"
 #include "core/platform_utils.h"
@@ -7,6 +8,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QXmlStreamReader>
+#include <QScopeGuard>
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -14,13 +16,15 @@
 #define SECURITY_WIN32
 #include <security.h>
 #include <shellapi.h>
+#include <taskschd.h>
+#include <wrl/client.h>
 
 namespace jietuba::elevation {
 namespace {
 const char TASK_XML[] = R"(<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>Jietuba</Description>
+    <Description>qck-snip</Description>
   </RegistrationInfo>
   <Triggers>
     <LogonTrigger>
@@ -90,8 +94,9 @@ QString dirname(const QString &path) {
 // The hand-off runs before QApplication exists, when applicationFilePath() is still empty.
 QString own_exe() {
     if (test_environment().exe) return *test_environment().exe;
-    wchar_t path[MAX_PATH * 4] = {};
+    wchar_t path[32768] = {};
     const DWORD length = GetModuleFileNameW(nullptr, path, static_cast<DWORD>(std::size(path)));
+    if (!length || length >= std::size(path)) return {};
     return QString::fromWCharArray(path, static_cast<int>(length));
 }
 
@@ -101,7 +106,56 @@ QString user_name() {
     ULONG size = static_cast<ULONG>(std::size(buffer));
     if (GetUserNameExW(NameSamCompatible, buffer, &size)) return QString::fromWCharArray(buffer, static_cast<int>(size));
     log_exception(QString("[WinError %1]").arg(GetLastError()), T("查询当前用户名"));
-    return qEnvironmentVariable("USERNAME");
+    return {};
+}
+
+QString GetSchtasksPath() {
+    wchar_t Directory[MAX_PATH + 1]{};
+    const UINT Length = GetSystemDirectoryW(Directory, MAX_PATH);
+    return Length && Length < MAX_PATH ? QDir(QString::fromWCharArray(Directory, Length)).filePath("schtasks.exe") : QString();
+}
+
+TaskWriter& GetTaskWriter() { static TaskWriter Writer; return Writer; }
+
+struct BString {
+    BSTR Value;
+    explicit BString(const QString& Text) : Value(SysAllocStringLen(reinterpret_cast<const OLECHAR*>(Text.utf16()), static_cast<UINT>(Text.size()))) {}
+    ~BString() { SysFreeString(Value); }
+    BString(const BString&) = delete;
+    BString& operator=(const BString&) = delete;
+};
+
+std::pair<int, QByteArray> WriteTask(bool Install, const QString& Xml, bool Validate = false) {
+    if (!Validate && GetTaskWriter()) return GetTaskWriter()(Install, Xml);
+    if (!Validate && !test_sandbox_dir().isEmpty()) return {-1, {}};
+    const HRESULT Initialized = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    if (FAILED(Initialized) && Initialized != RPC_E_CHANGED_MODE) return {static_cast<int>(Initialized), {}};
+    const auto Cleanup = qScopeGuard([&] { if (SUCCEEDED(Initialized)) CoUninitialize(); });
+    const HRESULT Security = CoInitializeSecurity(nullptr, -1, nullptr, nullptr, RPC_C_AUTHN_LEVEL_PKT_PRIVACY,
+                                                 RPC_C_IMP_LEVEL_IMPERSONATE, nullptr, EOAC_NONE, nullptr);
+    if (FAILED(Security) && Security != RPC_E_TOO_LATE) return {static_cast<int>(Security), {}};
+    Microsoft::WRL::ComPtr<ITaskService> Service;
+    HRESULT Result = CoCreateInstance(CLSID_TaskScheduler, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&Service));
+    VARIANT Empty{};
+    if (SUCCEEDED(Result)) Result = Service->Connect(Empty, Empty, Empty, Empty);
+    Microsoft::WRL::ComPtr<ITaskFolder> Root;
+    const BString RootName(QStringLiteral("\\")), Name(task_name()), Definition(Xml), Account(user_name());
+    if (!RootName.Value || !Name.Value || !Definition.Value || !Account.Value || user_name().isEmpty()) return {static_cast<int>(E_INVALIDARG), {}};
+    if (SUCCEEDED(Result)) Result = Service->GetFolder(RootName.Value, &Root);
+    if (SUCCEEDED(Result)) {
+        if (Install) {
+            VARIANT User{};
+            User.vt = VT_BSTR;
+            User.bstrVal = Account.Value;
+            Microsoft::WRL::ComPtr<IRegisteredTask> Registered;
+            Result = Root->RegisterTask(Name.Value, Definition.Value, Validate ? TASK_VALIDATE_ONLY : TASK_CREATE_OR_UPDATE, User, Empty,
+                                       TASK_LOGON_INTERACTIVE_TOKEN, Empty, &Registered);
+        } else {
+            Result = Root->DeleteTask(Name.Value, 0);
+            if (Result == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)) Result = S_OK;
+        }
+    }
+    return {SUCCEEDED(Result) ? 0 : static_cast<int>(Result), {}};
 }
 
 QString quote(const QString &arg) { return arg.contains(' ') || arg.isEmpty() ? '"' + arg + '"' : arg; }
@@ -123,11 +177,13 @@ std::pair<int, QByteArray> run_schtasks_process(const QStringList &args) {
     startup.hStdOutput = write_pipe;
     startup.hStdError = write_pipe;
     startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-    QStringList parts{"schtasks"};
+    const QString Program = GetSchtasksPath();
+    if (Program.isEmpty()) { CloseHandle(read_pipe); CloseHandle(write_pipe); return {-1, {}}; }
+    QStringList parts{quote(Program)};
     for (const auto &arg : args) parts << quote(arg);
     std::wstring command_line = parts.join(' ').toStdWString();
     PROCESS_INFORMATION process{};
-    const BOOL started = CreateProcessW(nullptr, command_line.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process);
+    const BOOL started = CreateProcessW(reinterpret_cast<LPCWSTR>(Program.utf16()), command_line.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process);
     CloseHandle(write_pipe);
     if (!started) {
         log_exception(QString("[WinError %1]").arg(GetLastError()), T("运行 schtasks"));
@@ -159,14 +215,15 @@ SchtasksRunner &test_elevated_runner() {
 // Through UAC; an elevated process started this way gives no output. -1 when UAC was cancelled.
 std::pair<int, QByteArray> run_schtasks_elevated_process(const QStringList &args) {
     if (!test_sandbox_dir().isEmpty()) return {-1, {}};
-    QStringList parts;
-    for (const auto &arg : args) parts << quote(arg);
-    const std::wstring parameters = parts.join(' ').toStdWString();
+    if (args.size() != 1 || (args.first() != "/Create" && args.first() != "/Delete")) return {-1, {}};
+    const std::wstring Program = own_exe().toStdWString();
+    if (Program.empty()) return {-1, {}};
+    const std::wstring parameters = QString::fromLatin1(args.first() == "/Create" ? InstallArgument : RemoveArgument).toStdWString();
     SHELLEXECUTEINFOW info{};
     info.cbSize = sizeof(info);
-    info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
+    info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC | SEE_MASK_FLAG_NO_UI;
     info.lpVerb = L"runas";
-    info.lpFile = L"schtasks";
+    info.lpFile = Program.c_str();
     info.lpParameters = parameters.c_str();
     info.nShow = SW_HIDE;
     if (!ShellExecuteExW(&info) || !info.hProcess) return {-1, {}};
@@ -183,11 +240,14 @@ std::function<bool()> &test_self_launcher() {
 
 // Through UAC, with the working directory the task would give the program.
 bool run_self_elevated_process() {
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup)) return false;
     if (!test_sandbox_dir().isEmpty()) return false;
     const std::wstring exe = own_exe().toStdWString();
+    if (exe.empty()) return false;
     const std::wstring directory = dirname(own_exe()).toStdWString();
     SHELLEXECUTEINFOW info{};
     info.cbSize = sizeof(info);
+    info.fMask = SEE_MASK_NOASYNC | SEE_MASK_FLAG_NO_UI;
     info.lpVerb = L"runas";
     info.lpFile = exe.c_str();
     info.lpDirectory = directory.c_str();
@@ -195,14 +255,30 @@ bool run_self_elevated_process() {
     return ShellExecuteExW(&info);
 }
 
-// Creating or removing the task needs elevation; querying and running it does not.
+// Only a fixed operation crosses UAC; the elevated helper derives its definition.
 std::pair<int, QByteArray> run_changing_schtasks(const QStringList &args) {
-    if (elevation_state() == ELEVATED) return run_schtasks(args);
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup)) return {-1, {}};
+    if (args.size() != 1 || (args.first() != "/Create" && args.first() != "/Delete")) return {-1, {}};
+    if (elevation_state() == ELEVATED) return WriteTask(args.first() == "/Create", build_task_xml(own_exe(), user_name()));
     return test_elevated_runner() ? test_elevated_runner()(args) : run_schtasks_elevated_process(args);
 }
 }
 
 void set_schtasks_runner_for_test(SchtasksRunner runner) { test_runner() = std::move(runner); }
+void SetTaskWriterForTest(TaskWriter Writer) { GetTaskWriter() = std::move(Writer); }
+bool ValidateTask() { return WriteTask(true, build_task_xml(own_exe(), user_name()), true).first == 0; }
+
+int RunTaskHelper(bool Install) {
+    // Never trust a test environment override at this external entry point.
+    HANDLE Token = nullptr;
+    TOKEN_ELEVATION Elevated{};
+    DWORD Length = 0;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &Token)) return 1;
+    const bool Allowed = GetTokenInformation(Token, TokenElevation, &Elevated, sizeof(Elevated), &Length) && Elevated.TokenIsElevated;
+    CloseHandle(Token);
+    if (!Allowed || !qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup) || !test_sandbox_dir().isEmpty()) return 1;
+    return WriteTask(Install, build_task_xml(own_exe(), user_name())).first;
+}
 
 void set_elevated_schtasks_runner_for_test(SchtasksRunner runner) { test_elevated_runner() = std::move(runner); }
 
@@ -236,7 +312,7 @@ QString elevation_state() {
 
 QString task_name() {
     const QString user = user_name();
-    return QString("Jietuba RunAsAdmin (%1)").arg(user.mid(user.lastIndexOf('\\') + 1));
+    return QString("QckSnip RunAsAdmin (%1)").arg(user.mid(user.lastIndexOf('\\') + 1));
 }
 
 QString build_task_xml(const QString &command, const QString &user) {
@@ -267,21 +343,8 @@ bool points_to_self(const std::optional<QString> &command) {
 }
 
 bool install_task() {
-    // A plain file closed before schtasks runs: QTemporaryFile keeps its handle open after
-    // close(), and schtasks cannot open a file another process holds for writing.
-    const QString path = QDir::toNativeSeparators(QDir::temp().filePath(QString("jietuba_task_%1.xml").arg(QCoreApplication::applicationPid())));
-    QFile file(path);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        log_exception(file.errorString(), T("创建管理员计划任务"));
-        return false;
-    }
-    // schtasks reads the file as the XML declaration says: UTF-16 with a BOM.
-    const QString xml = build_task_xml(own_exe(), user_name());
-    file.write("\xff\xfe", 2);
-    file.write(reinterpret_cast<const char *>(xml.utf16()), xml.size() * 2);
-    file.close();
-    const auto [code, out] = run_changing_schtasks({"/Create", "/TN", task_name(), "/XML", path, "/F"});
-    QFile::remove(path);
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup)) return false;
+    const auto [code, out] = run_changing_schtasks({"/Create"});
     if (code != 0) {
         log_warning(T("创建管理员计划任务失败（退出码 {code}）：{output}", {{"code", code}, {"output", QString::fromLocal8Bit(out).trimmed()}}), "Elevation");
         return false;
@@ -292,7 +355,7 @@ bool install_task() {
 
 bool remove_task() {
     if (!query_task_command()) return true;
-    const auto [code, out] = run_changing_schtasks({"/Delete", "/TN", task_name(), "/F"});
+    const auto [code, out] = run_changing_schtasks({"/Delete"});
     if (code == 0) {
         log_info(T("已删除管理员计划任务"), "Elevation");
         return true;
@@ -301,7 +364,9 @@ bool remove_task() {
     return false;
 }
 
-bool run_task() { return run_schtasks({"/Run", "/TN", task_name()}).first == 0; }
+bool run_task() {
+    return qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup) && run_schtasks({"/Run", "/TN", task_name()}).first == 0;
+}
 
 bool task_is_stale(const std::optional<QString> &command) { return command && !command->isEmpty() && !points_to_self(command) && !QFileInfo::exists(*command); }
 

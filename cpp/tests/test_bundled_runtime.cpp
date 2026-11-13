@@ -125,7 +125,7 @@ private slots:
 
     void theFallbackIsDefaultedUnderLocalAppData() {
         const QString fallback = QDir::fromNativeSeparators(ppocr_models::fallback_runtime_path());
-        QVERIFY(fallback.startsWith(QDir::fromNativeSeparators(qEnvironmentVariable("LOCALAPPDATA")) + "/Jietuba/runtime/"));
+        QVERIFY(fallback.startsWith(QDir::fromNativeSeparators(qEnvironmentVariable("LOCALAPPDATA")) + "/QckSnip/runtime/"));
         QVERIFY(fallback.endsWith("/onnxruntime.dll"));
     }
 

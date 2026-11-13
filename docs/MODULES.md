@@ -27,7 +27,7 @@ annotation/
 - The layer has no captured image under the drawings, so the highlighter cannot multiply onto what it covers; it is laid on at 35% opacity instead, each stroke in one pass so it keeps one tint, and a rectangle highlight fills its border and inside as one shape
 - A shape just drawn is not selected, so no handles show on the screen or in recordings; clicking a drawing with its tool still selects it
 - The whiteboard is a white window of its own under the layer, on and off with one click; it stays through pass-through so the desktop does not show by accident, and lies below the windows kept on top, so pins sit on the board and the drawings go over them
-- The cursor highlight takes the pointer and the buttons from the input hub's mouse events (the system hook), so it works in pass-through too, runs nothing while the pointer rests and misses no click; while drawing, its disc moves in the same repaint as the stroke, and a screenshot leaves it out
+- The cursor highlight takes the pointer and buttons from the input hub's mouse events and listens for system cursor-location events. While enabled, a 50 ms fallback sampler also catches physical movement when both event sources miss it; unchanged samples do not redraw. Disabling stops the sampler. While drawing, the disc moves in the same repaint as the stroke, and a screenshot leaves it out.
 
 ---
 

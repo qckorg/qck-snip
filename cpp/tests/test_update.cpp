@@ -2,6 +2,7 @@
 #include "core/update_checker.h"
 #include "core/update_controller.h"
 #include "core/updater_process.h"
+#include "core/feature_settings.h"
 #include "main_app.h"
 #include "ui/update_dialog.h"
 #include <QDir>
@@ -119,6 +120,15 @@ class UpdateTests : public QObject {
         emit runner_->event_received("downloaded", ID, {});
         runner_->finish();
     }
+    void CheckUpdateRefusal() {
+        QVERIFY(!updater_bundled());
+        UpdaterProcess Process;
+        QSignalSpy Failed(&Process, &UpdaterProcess::failed);
+        QVERIFY(!Process.start("check", {}, 100));
+        QCOMPARE(Process.process()->state(), QProcess::NotRunning);
+        QCOMPARE(Failed.count(), 1);
+        QVERIFY(Failed.first().first().toString().contains("disabled"));
+    }
 
 private slots:
     void init() {
@@ -174,7 +184,7 @@ private slots:
         QCOMPARE(info.tag_name, QString("v2.1.0"));
         QCOMPARE(info.title, QString("Version 2.1"));
         QCOMPARE(info.notes, QString("Added update checking."));
-        QCOMPARE(info.url, QString("https://github.com/1003129155/jietuba/releases/latest"));
+        QCOMPARE(info.url, QString("https://github.com/qckorg/qck-snip/releases/latest"));
     }
 
     void parseReleasePayloadRejectsUnusableResponses() {
@@ -201,6 +211,7 @@ private slots:
     }
 
     void checkerRunsInBackgroundRejectsOverlapsAndBuildsTheRequest() {
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::Updates)) { CheckUpdateRefusal(); return; }
         qputenv("JIETUBA_FAKE_UPDATER", "check-available");
         const QString record = QDir(local_->path()).filePath("args.txt");
         qputenv("JIETUBA_FAKE_UPDATER_ARGS", QDir::toNativeSeparators(record).toLocal8Bit());
@@ -223,6 +234,7 @@ private slots:
     }
 
     void checkerReportsTheHelperErrorAndAMissingHelper() {
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::Updates)) { CheckUpdateRefusal(); return; }
         qputenv("JIETUBA_FAKE_UPDATER", "check-error");
         GitHubReleaseChecker checker;
         QSignalSpy failed(&checker, &GitHubReleaseChecker::failed);
@@ -235,6 +247,7 @@ private slots:
     }
 
     void downloadProgressDuplicateClickAndHandoff() {
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::Updates)) { CheckUpdateRefusal(); return; }
         use_controller();
         QCOMPARE(controller_->dialog->windowModality(), Qt::NonModal);
         controller_->start();
@@ -263,6 +276,7 @@ private slots:
     }
 
     void busyKeepsDownloadAndRetriesInstallOnly() {
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::Updates)) { CheckUpdateRefusal(); return; }
         use_controller();
         controller_->start();
         host_.reason = "finish work";
@@ -278,6 +292,7 @@ private slots:
     }
 
     void cancelCloseOrSettingsFailureDoesNotExit() {
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::Updates)) { CheckUpdateRefusal(); return; }
         use_controller();
         controller_->start();
         downloaded();
@@ -290,6 +305,7 @@ private slots:
     }
 
     void closeDownloadingCancelsWithoutInstall() {
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::Updates)) { CheckUpdateRefusal(); return; }
         use_controller();
         controller_->start();
         controller_->dialog->close();
@@ -321,6 +337,7 @@ private slots:
     }
 
     void downloadRequestIsRemovedWhenProcessFinishes() {
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::Updates)) { CheckUpdateRefusal(); return; }
         use_controller();
         controller_->start();
         const QString requests = QDir(cache_).filePath("requests");
@@ -337,6 +354,7 @@ private slots:
         QTest::newRow("cancel") << true;
     }
     void asyncProcessExchangesJsonlAndCompletes() {
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::Updates)) { CheckUpdateRefusal(); return; }
         QFETCH(bool, cancel);
         qputenv("JIETUBA_FAKE_UPDATER", "protocol");
         UpdaterProcess runner;
@@ -359,6 +377,7 @@ private slots:
     }
 
     void processBufferingRejectsMismatchAndLargeLine() {
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::Updates)) { CheckUpdateRefusal(); return; }
         qputenv("JIETUBA_FAKE_UPDATER", "chunked");
         UpdaterProcess chunked;
         QSignalSpy received(&chunked, &UpdaterProcess::event_received);
@@ -383,6 +402,7 @@ private slots:
     }
 
     void shutdownWaitsForCancellationAndRemovesTheHelper() {
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::Updates)) { CheckUpdateRefusal(); return; }
         QFETCH(QByteArray, scenario);
         qputenv("JIETUBA_FAKE_UPDATER", scenario);
         UpdaterProcess runner;
@@ -401,6 +421,7 @@ private slots:
     }
 
     void processReportsMissingHelperAndIncompleteExit() {
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::Updates)) { CheckUpdateRefusal(); return; }
         UpdaterProcess runner;
         QSignalSpy errors(&runner, &UpdaterProcess::failed);
         set_helper_source_for_test(QDir(local_->path()).filePath("missing.exe"));
@@ -414,6 +435,7 @@ private slots:
     }
 
     void failedProcessStartAndTimeoutReportOnce() {
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::Updates)) { CheckUpdateRefusal(); return; }
         const QString not_a_program = QDir(local_->path()).filePath("broken.exe");
         // Empty: a non-image file with content is taken for a 16-bit program, and Windows then
         // shows a message box that waits for a click.
@@ -449,6 +471,7 @@ private slots:
         QTest::newRow("failed") << false;
     }
     void processExitCleansHelperAndOnlyFailedDownload() {
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::Updates)) { CheckUpdateRefusal(); return; }
         QFETCH(bool, success);
         const QString transaction(32, 'a');
         const QString stage = directory(cache_, transaction, {{success ? "app.exe" : "package.part", "data"}});
@@ -461,6 +484,7 @@ private slots:
     }
 
     void bundledHelperIsCopiedOutForEachRun() {
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::Updates)) { CheckUpdateRefusal(); return; }
         const QString embedded = QDir(local_->path()).filePath("bundle/jietuba_updater.exe");
         QDir().mkpath(QFileInfo(embedded).absolutePath());
         QFile file(embedded);
@@ -481,6 +505,7 @@ private slots:
 
     // With JIETUBA_UPDATES the real helper is in the resources: its copy runs and reports a release build.
     void bundledHelperRunsFromItsCopy() {
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::Updates)) { CheckUpdateRefusal(); return; }
         if (!QFileInfo::exists(":/updater/jietuba_updater.exe")) QSKIP("Built without JIETUBA_UPDATES");
         set_helper_source_for_test({});
         QVERIFY(updater_bundled());
