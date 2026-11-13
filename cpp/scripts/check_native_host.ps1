@@ -15,7 +15,7 @@ function CheckExit([string]$Step) {
 }
 Push-Location $BuildDirectory
 try {
-    & cl.exe /nologo /EHsc /W4 /MT /Z7 /Od /std:c++20 /I "$ProjectDirectory\src" "$ProjectDirectory\tests\native_host_probe.cpp" "$ProjectDirectory\src\core\ocr_security.cpp" /Fe:NativeHost.exe /link /DEBUG /INCREMENTAL:NO advapi32.lib
+    & cl.exe /nologo /EHsc /W4 /MT /Z7 /Od /std:c++20 /I "$ProjectDirectory\src" "$ProjectDirectory\tests\native_host_probe.cpp" "$ProjectDirectory\src\core\ocr_security.cpp" /Fe:NativeHost.exe /link /DEBUG /INCREMENTAL:NO advapi32.lib user32.lib
     CheckExit 'Guard compilation'
     & cl.exe /nologo /EHsc /W4 /MT "$ProjectDirectory\tests\test_launcher.cpp" /Fe:TestLauncher.exe /link advapi32.lib
     CheckExit 'Launcher compilation'
@@ -23,9 +23,13 @@ try {
     $Launcher = Join-Path $BuildDirectory 'TestLauncher.exe'
     & $Probe --deny
     CheckExit 'Elevated denial'
+    & $Probe --input-diagnostic
+    CheckExit 'Elevated input diagnostic'
     $env:QCK_TEST_KEEP_TOKEN = '0'
     & $Launcher $Probe --allow
     CheckExit 'Ordinary-host control'
+    & $Launcher $Probe --input-diagnostic
+    CheckExit 'Ordinary input diagnostic'
     $Collector = Get-ChildItem (Join-Path $VsDirectory 'Common7\IDE\Extensions\Microsoft\CodeCoverage.Console') -Filter 'Microsoft.CodeCoverage.Console.exe' -Recurse | Select-Object -First 1 -ExpandProperty FullName
     if (-not $Collector) { throw '[Test:NativeHost] Native coverage collector required.' }
     # Exercise CTest's real child-process pipes as well as coverage before paying

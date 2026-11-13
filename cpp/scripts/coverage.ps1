@@ -73,9 +73,14 @@ $ctestArgs = @('--test-dir', $buildDir, '-C', $config, '--output-on-failure', '-
 if ($TestFilter) { $ctestArgs += @('-R', $TestFilter) }
 if ($TestExclude) { $ctestArgs += @('-E', $TestExclude) }
 $CollectorArgs = @('collect', $ctest) + $ctestArgs + @('-o', $raw, '-f', 'cobertura', '-s', (Join-Path $PSScriptRoot 'coverage.config.xml'))
+if ($PrivilegedHost -and -not $TestFilter) { throw '[Test:Coverage] Preserving the host token requires an explicit test filter.' }
 if ($PrivilegedHost) {
-    & $console @CollectorArgs
-    $testsFailed = $LASTEXITCODE -ne 0
+    $PreviousKeepToken = $env:QCK_TEST_KEEP_TOKEN
+    try {
+        $env:QCK_TEST_KEEP_TOKEN = '1'
+        & $console @CollectorArgs
+        $testsFailed = $LASTEXITCODE -ne 0
+    } finally { $env:QCK_TEST_KEEP_TOKEN = $PreviousKeepToken }
 } else {
     # Cross-integrity native instrumentation misses ordinary children when the
     # collector stays elevated. Run the entire collection in the ordinary token.

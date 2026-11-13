@@ -150,14 +150,24 @@ jobs:
           Write-Output "[Test:Desktop] Bounds=$Bounds"
           if ($Bounds.Width -lt 1920 -or $Bounds.Height -lt 1080) { throw 'Desktop resolution setup failed.' }
 
-      # Tests on the real desktop inject input, register hotkeys and capture the
-      # runner's screen. They are serialized and required for this check.
+      # Normal-user desktop capture/layout suites remain serialized and required.
       - id: desktop
         if: always() && steps.build.outcome == 'success' && steps.desktop_setup.outcome == 'success'
-        run: .\scripts\coverage.ps1 -SkipBuild -Append -TestFilter '_desktop$|_windows_parity$'
+        run: .\scripts\coverage.ps1 -SkipBuild -Append -TestFilter '_desktop$|_windows_parity$' -TestExclude '^(input_hooks|main_app|screen_annotation|scroll_capture|shortcut_manager)_desktop$'
 
       - if: always() && steps.desktop.outcome == 'failure'
         continue-on-error: true
+        run: .\scripts\show_failed_tests.ps1 -NoRerun
+
+      # These retained suites inject into the hosted shell/foreground windows.
+      # Match their original elevated CI context: UIPI blocks medium SendInput
+      # into a higher-integrity target. Production OCR guards remain enforced.
+      - id: desktop_input
+        name: Interactive input on the hosted desktop
+        if: always() && steps.build.outcome == 'success' && steps.desktop_setup.outcome == 'success'
+        run: .\scripts\coverage.ps1 -SkipBuild -Append -PrivilegedHost -TestFilter '^(input_hooks|main_app|screen_annotation|scroll_capture|shortcut_manager)_desktop$'
+
+      - if: always() && steps.desktop_input.outcome == 'failure'
         run: .\scripts\show_failed_tests.ps1 -NoRerun
 
       - name: Complete test reports
