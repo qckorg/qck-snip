@@ -899,11 +899,20 @@ private slots:
         auto &annotation = start();
         annotation.set_cursor_highlight(true, false);
         auto *view = annotation.view();
-        SetCursorPos(640, 610);
+        QVERIFY(SetCursorPos(640, 610));
+        POINT Actual{};
+        QVERIFY(GetCursorPos(&Actual));
+        QCOMPARE(QPoint(Actual.x, Actual.y), QPoint(640, 610));
         QTRY_VERIFY_WITH_TIMEOUT(view->pointer_light(false) && view->pointer_light(false)->disc_position() == QPointF(640, 610), 3000);
-        SetCursorPos(900, 700);
+        QVERIFY(SetCursorPos(900, 700));
+        QVERIFY(GetCursorPos(&Actual));
+        QCOMPARE(QPoint(Actual.x, Actual.y), QPoint(900, 700));
         QTRY_COMPARE_WITH_TIMEOUT(view->pointer_light(false)->disc_position(), QPointF(900, 700), 3000);
+        // Leave a final sample pending, then ensure disabling cancels it.
+        annotation.cursor_highlight()->on_cursor_moved();
         annotation.set_cursor_highlight(false, false);
+        QTest::qWait(150);
+        QVERIFY(!view->pointer_light(false));
     }
 
     // A screenshot leaves the light out; the choice stays for the next session.

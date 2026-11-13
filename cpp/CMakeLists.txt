@@ -546,6 +546,9 @@ if(BUILD_TESTING)
     target_link_libraries(jietuba_pin_media_tests PRIVATE jietuba_lib Qt6::Test)
     add_test(NAME pin_media COMMAND jietuba_pin_media_tests -o ${JIETUBA_TEST_REPORTS}/pin_media.txt,txt)
     set_tests_properties(pin_media PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    # Asynchronous Windows shell metadata and GUI readiness deadlines need an
+    # idle worker; do not contend with native OCR's CPU pool under coverage.
+    set_tests_properties(pin_media PROPERTIES RUN_SERIAL TRUE)
     # The offscreen run has two screens and changes them at run time through the offscreen platform's
     # native interface, a private header.
     find_package(Qt6 QUIET COMPONENTS GuiPrivate)
@@ -631,7 +634,8 @@ if(BUILD_TESTING)
     endif()
     # ctest -j: the clipboard tests share the system clipboard, so they take turns. So do these others
     # that write it; a write waits only briefly for another holder, and a paste is then dropped.
-    set(jietuba_clipboard_writers python_core_parity translation_ui pin_window screenshot_window)
+    set(jietuba_clipboard_writers python_core_parity translation_ui pin_window pin_media screenshot_window result_windows
+        gif_recording_desktop main_app_desktop scroll_capture_desktop result_windows_desktop)
     get_property(jietuba_tests DIRECTORY PROPERTY TESTS)
     foreach(test IN LISTS jietuba_tests)
         if(test MATCHES "clipboard|^qck_features_" OR test IN_LIST jietuba_clipboard_writers)

@@ -31,6 +31,10 @@ private slots:
     void cleanup() {
         // Delayed pastes fire 50 ms after the action.
         QTest::qWait(80);
+        // A loaded worker can resume after qWait's deadline without another
+        // event-dispatch turn. Drain due timers before the next case clears its
+        // observations, so this case's delayed paste cannot contaminate it.
+        QCoreApplication::processEvents();
         if (auto *dialog = get_existing_manage_dialog()) {
             dialog->hide();
             destroy_manage_dialog();

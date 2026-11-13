@@ -135,6 +135,10 @@ void PointerLight::advance(qint64 now) {
 CursorHighlight::CursorHighlight(QObject *parent) : QObject(parent) {
     ripple_timer_.setInterval(FRAME_MS);
     connect(&ripple_timer_, &QTimer::timeout, this, &CursorHighlight::animate);
+    CursorSettleTimer.setSingleShot(true);
+    CursorSettleTimer.setInterval(100);
+    CursorSettleTimer.setTimerType(Qt::PreciseTimer);
+    connect(&CursorSettleTimer, &QTimer::timeout, this, &CursorHighlight::ReadCursorPosition);
     clock_.start();
 }
 
@@ -180,6 +184,7 @@ void CursorHighlight::set_enabled(bool enabled) {
     if (g_cursor_listener == this) g_cursor_listener = nullptr;
     if (auto *source = hub_ ? hub_ : existing_input_hub()) source->native->unwatch_mouse(WATCHER);
     ripple_timer_.stop();
+    CursorSettleTimer.stop();
     if (view_) view_->remove_pointer_light();
 }
 
@@ -205,14 +210,23 @@ void CursorHighlight::show_at(const QPoint &global) {
 
 void CursorHighlight::on_pointer(const QPoint &global) { show_at(global); }
 
+void CursorHighlight::ReadCursorPosition() {
+    POINT Position{};
+    // The same physical coordinates as the hook's.
+    if (enabled_ && GetCursorPos(&Position) && QPoint(Position.x, Position.y) != last_pos_)
+        on_pointer(QPoint(Position.x, Position.y));
+}
+
 void CursorHighlight::on_cursor_moved() {
+    if (!enabled_) return;
+    // Notifications and the queued read can interleave with rapid cursor moves.
+    // Restart one final sample after the burst, then remain idle again.
+    CursorSettleTimer.start();
     if (cursor_read_pending_) return;
     cursor_read_pending_ = true;
     QMetaObject::invokeMethod(this, [this] {
         cursor_read_pending_ = false;
-        POINT pos{};
-        // The same physical coordinates as the hook's.
-        if (enabled_ && GetCursorPos(&pos) && QPoint(pos.x, pos.y) != last_pos_) on_pointer(QPoint(pos.x, pos.y));
+        ReadCursorPosition();
     }, Qt::QueuedConnection);
 }
 
