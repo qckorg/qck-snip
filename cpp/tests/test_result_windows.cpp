@@ -1366,6 +1366,11 @@ private slots:
                 Cells << QString("(%1,%2)=%3").arg(Cell.row).arg(Cell.column).arg(Cell.text);
             qWarning().noquote() << "[Test:Table] Engine=" << OCRManager::instance().get_current_engine().value_or(QString())
                                  << "Text=" << window->text_edit->toPlainText() << "Cells=" << Cells.join("; ");
+            // Synthetic fixture only: preserve geometry needed to reproduce a
+            // model/row-grouping failure without any captured desktop content.
+            const auto Diagnostic = recognize_text(table_image());
+            for (const auto& Line : Diagnostic.data)
+                qWarning().noquote() << "[Test:Table] OCR=" << Line.text << "Box=" << Line.box;
         }
         QCOMPARE(window->table_view->table().rows, 3);
         QCOMPARE(window->table_view->table().columns, 3);
