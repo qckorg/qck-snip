@@ -7,6 +7,10 @@
 #include <cstdio>
 
 namespace {
+int TokenFailure(const char* Operation, DWORD Error) {
+    std::fprintf(stderr, "[Test:Host] %s failed: %lu\n", Operation, Error);
+    return 4;
+}
 // The command line after this program's own path, with the test's quoting intact.
 wchar_t *test_command_line() {
     wchar_t *line = GetCommandLineW();
@@ -41,19 +45,19 @@ int wmain() {
     DWORD Length = 0;
     wchar_t KeepToken[2]{};
     const bool Preserve = GetEnvironmentVariableW(L"QCK_TEST_KEEP_TOKEN", KeepToken, 2) == 1 && KeepToken[0] == L'1';
-    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY, &Token)) return 4;
-    if (!GetTokenInformation(Token, TokenElevation, &Elevated, sizeof(Elevated), &Length)) { CloseHandle(Token); return 4; }
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY, &Token)) return TokenFailure("OpenProcessToken", GetLastError());
+    if (!GetTokenInformation(Token, TokenElevation, &Elevated, sizeof(Elevated), &Length)) { const DWORD Error = GetLastError(); CloseHandle(Token); return TokenFailure("TokenElevation", Error); }
     BOOL Started = FALSE;
     if (Elevated.TokenIsElevated && !Preserve) {
         // Exercise normal desktop behavior. Lowering integrity alone retains admin authority.
-        if (!CreateRestrictedToken(Token, DISABLE_MAX_PRIVILEGE | LUA_TOKEN, 0, nullptr, 0, nullptr, 0, nullptr, &Restricted)) { CloseHandle(Token); return 4; }
+        if (!CreateRestrictedToken(Token, DISABLE_MAX_PRIVILEGE | LUA_TOKEN, 0, nullptr, 0, nullptr, 0, nullptr, &Restricted)) { const DWORD Error = GetLastError(); CloseHandle(Token); return TokenFailure("CreateRestrictedToken", Error); }
         BYTE Sid[SECURITY_MAX_SID_SIZE]{};
         DWORD SidSize = sizeof(Sid);
         TOKEN_MANDATORY_LABEL Label{};
-        if (!CreateWellKnownSid(WinMediumLabelSid, nullptr, Sid, &SidSize)) { CloseHandle(Restricted); CloseHandle(Token); return 4; }
+        if (!CreateWellKnownSid(WinMediumLabelSid, nullptr, Sid, &SidSize)) { const DWORD Error = GetLastError(); CloseHandle(Restricted); CloseHandle(Token); return TokenFailure("CreateWellKnownSid", Error); }
         Label.Label.Sid = Sid;
         Label.Label.Attributes = SE_GROUP_INTEGRITY;
-        if (!SetTokenInformation(Restricted, TokenIntegrityLevel, &Label, sizeof(Label) + SidSize)) { CloseHandle(Restricted); CloseHandle(Token); return 4; }
+        if (!SetTokenInformation(Restricted, TokenIntegrityLevel, &Label, sizeof(Label) + SidSize)) { const DWORD Error = GetLastError(); CloseHandle(Restricted); CloseHandle(Token); return TokenFailure("TokenIntegrityLevel", Error); }
         Started = CreateProcessAsUserW(Restricted, nullptr, command, nullptr, nullptr, TRUE, CREATE_SUSPENDED, nullptr, nullptr, &startup, &process);
         CloseHandle(Restricted);
     } else {
