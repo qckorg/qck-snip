@@ -471,6 +471,10 @@ if(BUILD_TESTING)
     # The PP-OCR pack is not in the repository; the PP-OCR cases copy it from this folder when set.
     # CI names it in the environment.
     set(JIETUBA_PPOCR_MODELS "$ENV{JIETUBA_PPOCR_MODELS}" CACHE PATH "Folder holding the PP-OCR pack (models and onnxruntime.dll) for the OCR tests")
+    set_property(TEST result_windows APPEND PROPERTY ENVIRONMENT "JIETUBA_PPOCR_MODELS=${JIETUBA_PPOCR_MODELS}")
+    if(WIN32)
+        set_property(TEST result_windows_desktop APPEND PROPERTY ENVIRONMENT "JIETUBA_PPOCR_MODELS=${JIETUBA_PPOCR_MODELS}")
+    endif()
     qt_add_executable(jietuba_ocr_manager_tests tests/test_ocr_manager.cpp)
     target_link_libraries(jietuba_ocr_manager_tests PRIVATE jietuba_lib Qt6::Test)
     target_compile_definitions(jietuba_ocr_manager_tests PRIVATE JIETUBA_OCR_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")

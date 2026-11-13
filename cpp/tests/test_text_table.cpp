@@ -88,6 +88,38 @@ private slots:
         QCOMPARE(grid(table), QStringList({"Name|Qty|Price", "Apple|12|3.50", "Pear|7|12.00"}));
     }
 
+    void PaddedOcrBoxesRespectRulingLines() {
+        // PP-OCRv6 detections from the real three-by-three result-window
+        // fixture. Apple's padded box extends past the rule at y=130.
+        struct Detection { const char* Text; double Left, Top, Right, Bottom; };
+        const Detection Detections[] = {
+            {"Name", 22.8063, 21.8971, 120.213, 69.2894},
+            {"Qty", 215.197, 23.1967, 274.803, 71.8033},
+            {"Price", 403.666, 22.6658, 486.334, 68.3342},
+            {"Apple", 21.602, 81.1938, 117.262, 133.287},
+            {"12", 216.016, 84.016, 259.984, 129.984},
+            {"3.50", 402.854, 82.8535, 476.146, 129.146},
+            {"Pear", 21.6456, 142.578, 103.996, 191.955},
+            {"7", 213.091, 144.091, 243.909, 188.909},
+            {"1.20", 404.561, 143.561, 477.439, 191.439}
+        };
+        for (const double Scale : {1.0, 2.0}) {
+            auto Image = blank(int(600 * Scale), int(200 * Scale));
+            QPainter Painter(&Image);
+            Painter.scale(Scale, Scale);
+            Painter.setPen(Qt::black);
+            for (int Y : {10, 70, 130, 190}) Painter.drawLine(10, Y, 590, Y);
+            for (int X : {10, 200, 400, 590}) Painter.drawLine(X, 10, X, 190);
+            Painter.end();
+            QVector<Line> Lines;
+            for (const auto& Detection : Detections)
+                Lines << line({{QString::fromLatin1(Detection.Text), Detection.Left * Scale, Detection.Right * Scale}},
+                              Detection.Top * Scale, (Detection.Bottom - Detection.Top) * Scale);
+            const auto Table = build_table(Image, Lines);
+            QCOMPARE(grid(Table), QStringList({"Name|Qty|Price", "Apple|12|3.50", "Pear|7|1.20"}));
+        }
+    }
+
     void ruledCellsWithoutALineBetweenMerge() {
         // Rules every 120 px across and every 50 px down; the header row has no line at x = 240.
         auto image = blank(400, 160);
