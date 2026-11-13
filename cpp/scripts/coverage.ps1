@@ -72,8 +72,21 @@ $raw = Join-Path $rawDir ("run-{0}.xml" -f @(Get-ChildItem $rawDir -Filter '*.xm
 $ctestArgs = @('--test-dir', $buildDir, '-C', $config, '--output-on-failure', '--timeout', '600', '-j', $Jobs)
 if ($TestFilter) { $ctestArgs += @('-R', $TestFilter) }
 if ($TestExclude) { $ctestArgs += @('-E', $TestExclude) }
-& $console collect $ctest @ctestArgs -o $raw -f cobertura -s (Join-Path $PSScriptRoot 'coverage.config.xml')
-$testsFailed = $LASTEXITCODE -ne 0
+$CollectorArgs = @('collect', $ctest) + $ctestArgs + @('-o', $raw, '-f', 'cobertura', '-s', (Join-Path $PSScriptRoot 'coverage.config.xml'))
+if ($PrivilegedHost) {
+    & $console @CollectorArgs
+    $testsFailed = $LASTEXITCODE -ne 0
+} else {
+    # Cross-integrity native instrumentation misses ordinary children when the
+    # collector stays elevated. Run the entire collection in the ordinary token.
+    $Launcher = Join-Path $buildDir "$config\jietuba_test_launcher.exe"
+    $PreviousKeepToken = $env:QCK_TEST_KEEP_TOKEN
+    try {
+        $env:QCK_TEST_KEEP_TOKEN = '0'
+        & $Launcher $console @CollectorArgs
+        $testsFailed = $LASTEXITCODE -ne 0
+    } finally { $env:QCK_TEST_KEEP_TOKEN = $PreviousKeepToken }
+}
 if (-not (Test-Path $raw)) { throw 'No coverage report was written.' }
 
 # Line coverage per source file under src: a line counts once, covered if any process hit it.

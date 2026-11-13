@@ -115,7 +115,7 @@ jobs:
       - id: tests
         if: always() && steps.build.outcome == 'success'
         # Four at a time on the runner's four cores; the clipboard tests take turns (RESOURCE_LOCK).
-        run: .\scripts\coverage.ps1 -SkipBuild -Jobs 4 -TestExclude '_desktop$|_windows_parity$'
+        run: .\scripts\coverage.ps1 -SkipBuild -Jobs 4 -TestExclude '_desktop$|_windows_parity$|^qck_ocr_privileged_host$'
 
       # Print the original QtTest reports without repeating expensive native/desktop suites.
       - if: failure() && steps.tests.outcome == 'failure'
@@ -130,6 +130,14 @@ jobs:
             cpp/build/coverage-build/test_reports
             cpp/build/coverage-build/Testing/Temporary/LastTest.log
           if-no-files-found: error
+
+      - id: privileged_tests
+        name: Elevated native-host regression
+        if: always() && steps.build.outcome == 'success'
+        run: .\scripts\coverage.ps1 -SkipBuild -Append -PrivilegedHost -TestFilter '^qck_ocr_privileged_host$'
+
+      - if: always() && steps.privileged_tests.outcome == 'failure'
+        run: .\scripts\show_failed_tests.ps1 -NoRerun
 
       # Large-scale layout fixtures need room for their minimum window sizes.
       # This changes only the disposable hosted runner's display.

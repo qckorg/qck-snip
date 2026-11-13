@@ -28,7 +28,9 @@ try {
     CheckExit 'Ordinary-host control'
     $Collector = Get-ChildItem (Join-Path $VsDirectory 'Common7\IDE\Extensions\Microsoft\CodeCoverage.Console') -Filter 'Microsoft.CodeCoverage.Console.exe' -Recurse | Select-Object -First 1 -ExpandProperty FullName
     if (-not $Collector) { throw '[Test:NativeHost] Native coverage collector required.' }
-    & $Collector collect $Launcher $Probe --allow -s (Join-Path $PSScriptRoot 'coverage.config.xml') -o NativeHostCoverage.xml -f cobertura
+    # Start the collector inside the ordinary token so its instrumentation IPC
+    # shares the same authority as the native process it measures.
+    & $Launcher $Collector collect $Probe --allow -s (Join-Path $PSScriptRoot 'coverage.config.xml') -o NativeHostCoverage.xml -f cobertura
     CheckExit 'Ordinary-host coverage'
     $Coverage = [xml](Get-Content -LiteralPath NativeHostCoverage.xml -Raw)
     $Covered = @($Coverage.SelectNodes("//class[contains(@filename, 'ocr_security.cpp')]/lines/line[@hits != '0']"))
