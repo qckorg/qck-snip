@@ -25,6 +25,9 @@ No sustained local application build or desktop tests were run.
 ## Required PR matrix
 
 - **Policy:** default, capture and all-capability CMake presets, with Release CTest.
+- **Native preflight:** compile the real Windows host guard and launcher without
+  Qt/Rust, verify denial on the elevated host, acceptance after token restriction,
+  and denial when the host token is deliberately preserved for the probe.
 - **Full C++:** `scripts/coverage.ps1 -BuildOnly -PrivilegedHost`, then the full
   offscreen suite with four test workers. Optional service availability is enabled
   so retained enabled behavior remains exercised; production defaults remain off
