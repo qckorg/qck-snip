@@ -1,4 +1,5 @@
 #include "settings/data_folder.h"
+#include <qck/Product.h>
 #include "core/constants.h"
 #include "core/elevation.h"
 #include "core/logger.h"
@@ -48,7 +49,7 @@ bool folder_writable(const QString &dir) {
 
 QString move_settings_file(ToolSettingsManager &config, bool beside_program, const QString &program_dir, const QString &roaming_dir) {
     const DataLocation target = beside_program ? DataLocation{QDir::cleanPath(QDir::fromNativeSeparators(program_dir)), true}
-                                               : DataLocation{QDir(QDir::fromNativeSeparators(roaming_dir)).filePath("Jietuba"), false};
+                                               : DataLocation{QDir(QDir::fromNativeSeparators(roaming_dir)).filePath(QString::fromUtf8(qck::Product::DataDirectory)), false};
     const QString from = config.qsettings.settings().fileName();
     const QString to = target.settings_file();
     if (same_file(from, to)) {
@@ -109,7 +110,7 @@ std::unique_ptr<QSettings> open_store(const QString &path) {
 
 QList<Source> sources_for(const DataLocation &target) {
     if (target.beside_program) return {};
-    return {{LOCAL_SETTINGS_KEY, REGISTRY_ROOT + "Software\\Jietuba\\ClipboardWindow", REGISTRY_ROOT + "Software\\Jietuba\\Migrated"}};
+    return {{LOCAL_SETTINGS_KEY, REGISTRY_ROOT + "Software\\QckOrg\\QckSnip\\ClipboardWindow", REGISTRY_ROOT + "Software\\QckOrg\\QckSnip\\Migrated"}};
 }
 
 QList<Source> default_sources(const DataLocation &target) {

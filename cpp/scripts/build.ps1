@@ -16,11 +16,12 @@ param(
     # the model catalog (scripts\fetch_ort_runtime.ps1); -OrtDll uses a folder's onnxruntime.dll and
     # its onnxruntime-LICENSE.txt / onnxruntime-ThirdPartyNotices.txt instead.
     [switch]$Full,
-    [string]$OrtDll = ''
+    [string]$OrtDll = '',
+    [ValidateSet('Compatible', 'Capture')][string]$FeatureProfile = 'Compatible'
 )
 if ($Arch -eq 'arm64' -and -not $Static) { throw 'ARM64 is built only as the single file: add -Static.' }
 if ($Full -and -not $Static) { throw 'The full package is the single file: add -Static.' }
-$Updates = ($Updates -or $Static) -and -not $NoUpdates
+$Updates = $Updates -and -not $NoUpdates
 $ErrorActionPreference = 'Stop'
 $env:VSLANG = '1033'
 $projectRoot = Split-Path $PSScriptRoot -Parent
@@ -81,6 +82,12 @@ if ($Full) {
 # Passed every time so an earlier configuration cannot leave them on. The single file is the
 # released lite package, or with -Full the full one, and takes that package's exe name.
 $configureArgs += "-DJIETUBA_UPDATES=$(if ($Updates) { 'ON' } else { 'OFF' })"
+$configureArgs += "-DQCK_ENABLE_UPDATES=$(if ($Updates) { 'ON' } else { 'OFF' })"
+$configureArgs += '-DQCK_ENABLE_ADMIN_STARTUP=OFF'
+$FeatureValue = if ($FeatureProfile -eq 'Capture') { 'OFF' } else { 'ON' }
+foreach ($FeatureName in 'OCR', 'TRANSLATION', 'CLIPBOARD_HISTORY') {
+    $configureArgs += "-DQCK_ENABLE_${FeatureName}=$FeatureValue"
+}
 $configureArgs += "-DJIETUBA_LITE_EXE=$(if ($Static -and -not $Full) { 'ON' } else { 'OFF' })"
 $configureArgs += "-DJIETUBA_FULL_EXE=$(if ($Full) { 'ON' } else { 'OFF' })"
 $configureArgs += "-DJIETUBA_ORT_DLL=$ortPath"

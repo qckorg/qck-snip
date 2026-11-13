@@ -1,4 +1,5 @@
 #include "settings/settings_transfer.h"
+#include <qck/FeaturePolicy.h>
 #include "settings/tool_settings.h"
 #include <QFile>
 #include <QJsonArray>
@@ -13,6 +14,9 @@ QStringList paths_in(SettingScope scope) {
     QStringList paths;
     for (const auto &setting : APP_SETTINGS())
         if (setting.scope == scope) paths.append(setting.path);
+    if (scope == SettingScope::Import)
+        for (const auto& Descriptor : qck::GetFeatures())
+            paths.append("features/" + QString::fromUtf8(Descriptor.Key.data(), static_cast<qsizetype>(Descriptor.Key.size())));
     std::sort(paths.begin(), paths.end());
     return paths;
 }

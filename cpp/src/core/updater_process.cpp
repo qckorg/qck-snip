@@ -1,4 +1,5 @@
 #include "core/updater_process.h"
+#include "core/feature_settings.h"
 #include "core/logger.h"
 #include "core/update_cache.h"
 #include <QCoreApplication>
@@ -23,11 +24,14 @@ QString &helper_source_override() {
 QString tr_process(const char *text) { return QCoreApplication::translate("UpdaterProcess", text); }
 }
 
-bool updater_bundled() { return !helper_source_override().isEmpty() || QFileInfo::exists(BUNDLED_HELPER); }
+bool updater_bundled() {
+    return qck::FeatureSettings::IsEnabled(qck::Feature::Updates) && (!helper_source_override().isEmpty() || QFileInfo::exists(BUNDLED_HELPER));
+}
 
 void set_helper_source_for_test(const QString &path) { helper_source_override() = path; }
 
 QString helper_path() {
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::Updates)) throw std::runtime_error("Updates disabled by feature policy");
     const QString source = helper_source_override().isEmpty() ? BUNDLED_HELPER : helper_source_override();
     if (!QFileInfo::exists(source)) throw std::runtime_error("This build has no updater helper; configure with -DJIETUBA_UPDATES=ON");
     const QString root = QDir(update_cache::cache_subdirectory("helpers")).filePath(QUuid::createUuid().toString(QUuid::Id128));

@@ -1,4 +1,5 @@
 #include "core/data_location.h"
+#include <qck/Product.h>
 #include "core/constants.h"
 #include <QCoreApplication>
 #include <QDir>
@@ -29,7 +30,7 @@ QString DataLocation::settings_file() const { return QDir(dir).filePath(SETTINGS
 DataLocation resolve_data_location(const QString &program_dir, const QString &roaming_dir) {
     if (!program_dir.isEmpty() && QFileInfo(QDir(program_dir).filePath(SETTINGS_FILE_NAME)).isFile())
         return {QDir::cleanPath(QDir::fromNativeSeparators(program_dir)), true};
-    return {QDir(QDir::fromNativeSeparators(roaming_dir)).filePath("Jietuba"), false};
+    return {QDir(QDir::fromNativeSeparators(roaming_dir)).filePath(QString::fromUtf8(qck::Product::DataDirectory)), false};
 }
 
 namespace {

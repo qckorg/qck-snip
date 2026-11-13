@@ -1,0 +1,18 @@
+name: QCK feature policy
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  policy:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        preset: [policy, policy-capture, policy-all]
+    defaults:
+      run:
+        working-directory: cpp
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - run: cmake --preset ${{ matrix.preset }}
+      - run: cmake --build build/qck-${{ matrix.preset }} --config Release --parallel 2
+      - run: ctest --test-dir build/qck-${{ matrix.preset }} -C Release --output-on-failure

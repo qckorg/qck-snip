@@ -1,4 +1,5 @@
 #include "ocr/snipping_tool_ocr.h"
+#include "core/feature_settings.h"
 #include "core/constants.h"
 #include "ocr/ocr_line_geometry.h"
 // Generated at configure time from the oneocr package (CMakeLists.txt).
@@ -92,6 +93,7 @@ bool snipping_tool_files_present(const QString &directory) {
 }
 
 std::optional<std::pair<QString, QString>> find_snipping_tool() {
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::Ocr)) return std::nullopt;
     using FindPackagesByPackageFamilyFn = LONG(WINAPI *)(PCWSTR, UINT32, UINT32 *, PWSTR *, UINT32 *, WCHAR *, UINT32 *);
     using GetPackagePathByFullNameFn = LONG(WINAPI *)(PCWSTR, UINT32 *, PWSTR);
     auto *kernel32 = GetModuleHandleW(L"kernel32.dll");
@@ -129,6 +131,7 @@ QString snipping_tool_cache_root() {
 }
 
 QString prepare_snipping_tool_files(const std::pair<QString, QString> &package) {
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::Ocr)) throw std::runtime_error("OCR disabled by feature policy");
     const auto &[full_name, source] = package;
     const QDir root(snipping_tool_cache_root());
     const auto target = root.filePath(full_name);

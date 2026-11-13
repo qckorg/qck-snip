@@ -54,7 +54,7 @@ private:
 };
 
 // Where settings app_settings.inc marks Local live.
-inline const QString LOCAL_SETTINGS_KEY = "HKEY_CURRENT_USER\\Software\\Jietuba\\ToolSettings";
+inline const QString LOCAL_SETTINGS_KEY = "HKEY_CURRENT_USER\\Software\\QckOrg\\QckSnip\\ToolSettings";
 // LOCAL_SETTINGS_KEY; inside the test sandbox, which must not touch the registry, the settings file.
 std::unique_ptr<QSettings> open_local_settings();
 // QSettings keys of the settings app_settings.inc marks Local.

@@ -3,10 +3,10 @@
 
 namespace jietuba {
 // Where the settings file lives: the settings.ini beside the program when there is one, else
-// %APPDATA%\Jietuba\settings.ini. Settings bound to this computer stay in the registry
-// (SettingsStore), and the clipboard history keeps its default in %APPDATA%\pyclipboard
+// %APPDATA%\QckSnip\settings.ini. Settings bound to this computer stay in the registry
+// (SettingsStore), and clipboard history defaults to %APPDATA%\QckSnip\clipboard
 // (ClipboardManager), so neither moves with the file. Logs and caches stay in
-// %LOCALAPPDATA%\Jietuba (get_app_data_dir).
+// %LOCALAPPDATA%\QckSnip (get_app_data_dir).
 struct DataLocation {
     QString dir;
     bool beside_program = false;

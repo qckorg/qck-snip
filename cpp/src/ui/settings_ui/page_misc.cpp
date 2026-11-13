@@ -1,5 +1,6 @@
 #include "core/data_location.h"
 #include "core/elevation.h"
+#include "core/feature_settings.h"
 #include "core/i18n.h"
 #include "core/platform_utils.h"
 #include "core/ui_scale.h"
@@ -30,6 +31,7 @@ QString documents_dir() { return QStandardPaths::writableLocation(QStandardPaths
 // Run as administrator, a child of autostart; hidden for accounts that cannot elevate. It can be
 // changed without elevation too: applying goes through UAC (SettingsDialog::apply_startup).
 void add_run_as_admin_card(SettingsDialog *dialog, SettingsCardGroup *group, SwitchSettingCard *autostart_card) {
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup)) return;
     const QString state = elevation::elevation_state();
     if (state == elevation::STANDARD) return;
     QString description = dialog->tr_text("Lets screenshots capture administrator windows such as Task Manager. "

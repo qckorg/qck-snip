@@ -1,4 +1,5 @@
 #include "ui/settings_ui/dialog.h"
+#include <qck/FeaturePolicy.h>
 #include "clipboard/ui/theme/themes.h"
 #include "core/i18n.h"
 #include "core/logger.h"
@@ -1541,6 +1542,12 @@ void SettingsDialog::load_imported_settings(const QVariantMap &values) {
     for (const auto &key : toolbar_layout::setting_keys()) {
         const QVariant layout = values.value(ToolSettingsManager::app_setting_path(key));
         if (layout.typeId() == QMetaType::QString) config_manager->set_app_setting(key, layout.toString());
+    }
+    // Policy has no editable controls yet. Preserve explicitly imported known keys
+    // independently of the UI preview. The immutable runtime snapshot changes on restart.
+    for (const auto& Descriptor : qck::GetFeatures()) {
+        const QString Path = "features/" + QString::fromUtf8(Descriptor.Key.data(), static_cast<qsizetype>(Descriptor.Key.size()));
+        if (values.contains(Path)) config_manager->qsettings.setValue(Path, values.value(Path));
     }
     apply_settings();
 }

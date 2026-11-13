@@ -1,0 +1,10 @@
+configure_file(FeatureConfig.h.in generated/qck/FeatureConfig.h)
+add_library(qck_feature_policy STATIC FeaturePolicy.cpp)
+target_include_directories(qck_feature_policy PUBLIC include ${CMAKE_CURRENT_BINARY_DIR}/generated)
+target_compile_features(qck_feature_policy PUBLIC cxx_std_20)
+if(BUILD_TESTING)
+    # Deliberately not named *_tests: the legacy test loop adds Qt/Rust to those.
+    add_executable(qck_policy_check tests/FeaturePolicyTests.cpp)
+    target_link_libraries(qck_policy_check PRIVATE qck_feature_policy)
+    add_test(NAME qck_feature_policy COMMAND qck_policy_check)
+endif()

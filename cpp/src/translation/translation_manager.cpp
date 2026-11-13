@@ -1,4 +1,5 @@
 #include "translation/translation_manager.h"
+#include "core/feature_settings.h"
 #include "core/i18n.h"
 #include "core/logger.h"
 #include "core/platform_utils.h"
@@ -142,6 +143,7 @@ void TranslationManager::configure(const QString &api_key, bool use_pro, const Q
 }
 
 void TranslationManager::translate(const QString &text, std::optional<QPoint> position, const QVariantMap &params) {
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::Translation)) return;
     resolve_api_key(params);
     apply_request_params(params);
     const auto target_lang = params.value("target_lang", "ZH").toString();
@@ -183,6 +185,7 @@ void TranslationManager::translate(const QString &text, std::optional<QPoint> po
 }
 
 void TranslationManager::translate_compact(const QString &raw_text, std::optional<QPoint> position, const QVariantMap &params) {
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::Translation)) return;
     const auto text = raw_text.trimmed();
     if (text.isEmpty()) {
         translate({}, position, params);
@@ -213,6 +216,7 @@ void TranslationManager::translate_compact(const QString &raw_text, std::optiona
 }
 
 void TranslationManager::open_compact_input(std::optional<QPoint> position, const QVariantMap &params) {
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::Translation)) return;
     resolve_api_key(params);
     apply_request_params(params);
     const auto target_lang = params.value("target_lang", "ZH").toString();
@@ -314,6 +318,7 @@ void TranslationManager::ensure_dialog(const QString &text, std::optional<QPoint
 }
 
 void TranslationManager::start_translation(const QString &text, const QString &target_lang, const std::optional<QString> &source_lang, const QString &result_target) {
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::Translation)) return;
     const auto provider_name = backend_name();
     log_info(T("调用翻译引擎 {provider_name}: target={target_lang}, preserve_formatting={preserve_formatting}",
                {{"provider_name", provider_name}, {"target_lang", target_lang}, {"preserve_formatting", preserve_formatting_}}),
@@ -444,6 +449,7 @@ void TranslationManager::shutdown(std::optional<int> timeout_ms, int ocr_timeout
 bool TranslationManager::is_dialog_open() const { return is_dialog_valid() && dialog_->isVisible(); }
 
 void TranslationManager::translate_from_image(const QPixmap &pixmap, const QVariantMap &params) {
+    if (!qck::FeatureSettings::GetPolicy().CanTranslateImage()) return;
     begin_ocr_translation(std::nullopt, params);
     // Keeps the image until the OCR thread is done.
     pending_pixmap_ = pixmap;
@@ -451,6 +457,7 @@ void TranslationManager::translate_from_image(const QPixmap &pixmap, const QVari
 }
 
 void TranslationManager::begin_ocr_translation(std::optional<QPoint> position, const QVariantMap &params) {
+    if (!qck::FeatureSettings::GetPolicy().CanTranslateImage()) return;
     resolve_api_key(params);
     apply_request_params(params);
     const auto target_lang = params.value("target_lang", "ZH").toString();
@@ -470,6 +477,7 @@ void TranslationManager::begin_ocr_translation(std::optional<QPoint> position, c
 }
 
 void TranslationManager::start_ocr_thread(const QPixmap &pixmap) {
+    if (!qck::FeatureSettings::GetPolicy().CanTranslateImage()) return;
     // QPixmap must stay on the GUI thread; the worker gets a deep-copied QImage.
     if (pixmap.isNull()) {
         log_debug(T("传入 pixmap 为空，跳过OCR"), "Translation");

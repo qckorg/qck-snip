@@ -1,4 +1,6 @@
 #include "core/bootstrap.h"
+#include "core/feature_settings.h"
+#include <qck/Product.h>
 #include "clipboard/ui/windows/clipboard_window.h"
 #include "core/shortcut_manager.h"
 #include "ui/dialogs.h"
@@ -129,6 +131,7 @@ void ensure_single_instance() {
 }
 
 bool hand_off_to_admin_task(int poll_ms, int timeout_ms, const QString &pid_file) {
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup)) return false;
     // The task's own instance is elevated, and after the account drops to a standard user
     // the state is STANDARD, so neither hands off again.
     if (elevation::elevation_state() != elevation::CAN_ELEVATE) return false;
@@ -174,20 +177,22 @@ void PreloadManager::build_and_start() {
     // and the PNG encoder) have nothing to warm in a native build and are left out.
     // An elevated instance points a task left on a program that is gone at itself; schtasks runs
     // on a worker so start-up is not held.
-    if (cfg->get_run_as_admin()) steps_.push_back([] {
+    if (qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup) && cfg->get_run_as_admin()) steps_.push_back([] {
         std::thread([] { run_thread_guarded("AdminTask", [] { elevation::repair_task(); }); }).detach();
         return false;
     });
     // Before the engine setting, which resolves the engine by what is installed.
-    if (!bundled_runtime::data().isEmpty()) steps_.push_back([this] { return seed_bundled_runtime(); });
+    if (qck::FeatureSettings::IsEnabled(qck::Feature::Ocr) && !bundled_runtime::data().isEmpty())
+        steps_.push_back([this] { return seed_bundled_runtime(); });
     // The engine preference is read here and handed to OCR, so recognition threads never read settings.
-    steps_.push_back([this] { return apply_ocr_engine_setting(); });
+    if (qck::FeatureSettings::IsEnabled(qck::Feature::Ocr))
+        steps_.push_back([this] { return apply_ocr_engine_setting(); });
     // Files of drags from the last run that exited before removing them; nothing can be dragged yet.
     steps_.push_back([] {
         DragOutMimeData::remove_stale_folders(DragOutMimeData::default_temp_root(), 0);
         return false;
     });
-    if (cfg->get_preload_clipboard()) steps_.push_back([this] {
+    if (qck::FeatureSettings::IsEnabled(qck::Feature::ClipboardHistory) && cfg->get_preload_clipboard()) steps_.push_back([this] {
         init_clipboard_manager();
         return false;
     });
@@ -195,7 +200,8 @@ void PreloadManager::build_and_start() {
     if (cfg->get_preload_screenshot() && cfg->get_capture_engine() != "mss")
         steps_.push_back([this] { return preload_hdr_session(); });
     if (cfg->get_preload_toolbar()) steps_.push_back([this] { return preload_toolbar_assets(); });
-    if (cfg->get_preload_ocr()) steps_.push_back([this] { return preload_ocr_engine(); });
+    if (qck::FeatureSettings::IsEnabled(qck::Feature::Ocr) && cfg->get_preload_ocr())
+        steps_.push_back([this] { return preload_ocr_engine(); });
     if (cfg->get_preload_settings()) steps_.push_back([this] {
         preload_settings();
         return false;
@@ -339,6 +345,7 @@ bool PreloadManager::show_main_window_on_start() {
 void PreloadManager::init_clipboard_manager() { app_->set_clipboard_monitoring_enabled(config_->get_clipboard_enabled()); }
 
 void PreloadManager::preload_clipboard_window() {
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::ClipboardHistory)) return;
     if (!config_->get_clipboard_enabled()) {
         log_debug(T("剪贴板功能已禁用，跳过剪贴板窗口预创建"), "Clipboard");
         return;
@@ -363,9 +370,11 @@ int run(int argc, char **argv) {
     setup_environment();
     // 2./3. Module paths and pinning onefile resources do not apply to a native build.
     // 4. The taskbar identity, before QApplication exists.
-    set_app_user_model_id("jietuba.app");
+    set_app_user_model_id(QString::fromUtf8(qck::Product::AppId));
     // 5. On the first start with a data folder, what older versions stored elsewhere, before anything reads it.
     data_folder::migrate(data_location(), data_folder::default_sources(data_location()));
+    // Resolve settings once, before any feature worker can access the immutable policy.
+    (void)qck::FeatureSettings::GetPolicy();
     // 6. In admin mode the elevated instance started by the scheduled task runs instead.
     if (open_local_settings()->value("app/run_as_admin", false).toBool() && hand_off_to_admin_task())
         return 0;

@@ -1,4 +1,5 @@
 #include "main_app.h"
+#include "core/feature_settings.h"
 #include "clipboard/core/manager.h"
 #include "clipboard/services/group_service.h"
 #include "clipboard/ui/dialogs/manage_dialog.h"
@@ -107,6 +108,9 @@ MainApp::MainApp(int &argc, char **argv) : app(std::make_unique<QApplication>(ar
     connect(ui_theme_manager, &UIThemeManager::theme_changed, this, &MainApp::on_ui_theme_changed);
 
     setup_logger(config_manager);
+    qck::FeatureSettings::ReportDiagnostics();
+    app->setApplicationName("qck-snip");
+    app->setApplicationDisplayName("qck-snip");
     data_folder::write_deferred_log();
     connect(app.get(), &QCoreApplication::aboutToQuit, this, &MainApp::on_about_to_quit);
 
@@ -258,7 +262,7 @@ void MainApp::setup_pin_tray_updates() {
 
 void MainApp::update_tray_menu() {
     if (!tray_icon) return;
-    tray_icon->setToolTip(tr_text("jietuba - Click to screenshot"));
+    tray_icon->setToolTip("qck-snip - Click to screenshot");
     auto *old_menu = tray_icon->contextMenu();
     tray_icon->setContextMenu(create_tray_menu(this));
     // QSystemTrayIcon does not own its menu.
@@ -281,6 +285,8 @@ void MainApp::update_hotkey(bool show_error) {
 
     std::vector<std::pair<QString, QString>> failed_hotkeys;
     for (const auto &[function, label, callback] : functions) {
+        if (function == "translation" && !qck::FeatureSettings::IsEnabled(qck::Feature::Translation)) continue;
+        if (function == "clipboard" && !qck::FeatureSettings::IsEnabled(qck::Feature::ClipboardHistory)) continue;
         const auto hotkeys = config_manager->get_global_hotkeys(function);
         for (int slot = 0; slot < static_cast<int>(hotkeys.size()); ++slot) {
             const QString &hotkey = hotkeys[slot];
@@ -353,7 +359,7 @@ void MainApp::setup_tray() {
     if (!QSystemTrayIcon::isSystemTrayAvailable()) show_error_dialog(nullptr, tr_text("Error"), tr_text("System tray not available"));
     tray_icon = new QSystemTrayIcon(this);
     tray_icon->setIcon(create_app_icon());
-    tray_icon->setToolTip(tr_text("jietuba - Click to screenshot"));
+    tray_icon->setToolTip("qck-snip - Click to screenshot");
     tray_icon->setContextMenu(create_tray_menu(this));
     connect(tray_icon, &QSystemTrayIcon::activated, this, &MainApp::on_tray_activated);
     tray_icon->show();
@@ -566,6 +572,7 @@ void MainApp::open_settings_page(int stack_index, const QString &route_key) {
 }
 
 void MainApp::open_translator() {
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::Translation)) return;
     if (update_preparing) return;
     TranslationManager::instance()->translate({}, std::nullopt, config_manager->get_translation_request_params());
 }
@@ -575,6 +582,7 @@ void MainApp::on_clipboard_item_received(const clipboard::ClipboardItem &item) {
 }
 
 bool MainApp::set_clipboard_monitoring_enabled(bool enabled) {
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::ClipboardHistory)) return !enabled;
     auto *manager = clipboard_manager;
     if (!enabled) {
         if (!manager) {
@@ -643,6 +651,7 @@ clipboard::ClipboardWindow *MainApp::ensure_clipboard_window() {
 }
 
 void MainApp::open_clipboard_window() {
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::ClipboardHistory)) return;
     if (update_preparing) return;
     try {
         // Visible: the hotkey closes it.

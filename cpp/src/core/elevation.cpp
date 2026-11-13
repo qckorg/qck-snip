@@ -1,4 +1,5 @@
 #include "core/elevation.h"
+#include "core/feature_settings.h"
 #include "core/constants.h"
 #include "core/logger.h"
 #include "core/platform_utils.h"
@@ -20,7 +21,7 @@ namespace {
 const char TASK_XML[] = R"(<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>Jietuba</Description>
+    <Description>qck-snip</Description>
   </RegistrationInfo>
   <Triggers>
     <LogonTrigger>
@@ -183,6 +184,7 @@ std::function<bool()> &test_self_launcher() {
 
 // Through UAC, with the working directory the task would give the program.
 bool run_self_elevated_process() {
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup)) return false;
     if (!test_sandbox_dir().isEmpty()) return false;
     const std::wstring exe = own_exe().toStdWString();
     const std::wstring directory = dirname(own_exe()).toStdWString();
@@ -197,6 +199,7 @@ bool run_self_elevated_process() {
 
 // Creating or removing the task needs elevation; querying and running it does not.
 std::pair<int, QByteArray> run_changing_schtasks(const QStringList &args) {
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup)) return {-1, {}};
     if (elevation_state() == ELEVATED) return run_schtasks(args);
     return test_elevated_runner() ? test_elevated_runner()(args) : run_schtasks_elevated_process(args);
 }
@@ -236,7 +239,7 @@ QString elevation_state() {
 
 QString task_name() {
     const QString user = user_name();
-    return QString("Jietuba RunAsAdmin (%1)").arg(user.mid(user.lastIndexOf('\\') + 1));
+    return QString("QckSnip RunAsAdmin (%1)").arg(user.mid(user.lastIndexOf('\\') + 1));
 }
 
 QString build_task_xml(const QString &command, const QString &user) {
@@ -267,6 +270,7 @@ bool points_to_self(const std::optional<QString> &command) {
 }
 
 bool install_task() {
+    if (!qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup)) return false;
     // A plain file closed before schtasks runs: QTemporaryFile keeps its handle open after
     // close(), and schtasks cannot open a file another process holds for writing.
     const QString path = QDir::toNativeSeparators(QDir::temp().filePath(QString("jietuba_task_%1.xml").arg(QCoreApplication::applicationPid())));
@@ -301,7 +305,9 @@ bool remove_task() {
     return false;
 }
 
-bool run_task() { return run_schtasks({"/Run", "/TN", task_name()}).first == 0; }
+bool run_task() {
+    return qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup) && run_schtasks({"/Run", "/TN", task_name()}).first == 0;
+}
 
 bool task_is_stale(const std::optional<QString> &command) { return command && !command->isEmpty() && !points_to_self(command) && !QFileInfo::exists(*command); }
 

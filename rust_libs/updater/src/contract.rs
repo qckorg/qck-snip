@@ -17,8 +17,8 @@ impl AppVariant {
     }
     pub fn name(self) -> &'static str {
         match self {
-            Self::Full => "jietuba_pp",
-            Self::Lite => "jietuba_lite",
+            Self::Full => "qck-snip-full",
+            Self::Lite => "qck-snip",
         }
     }
     pub fn executable_name(self) -> String {
