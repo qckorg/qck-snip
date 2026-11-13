@@ -135,10 +135,9 @@ void PointerLight::advance(qint64 now) {
 CursorHighlight::CursorHighlight(QObject *parent) : QObject(parent) {
     ripple_timer_.setInterval(FRAME_MS);
     connect(&ripple_timer_, &QTimer::timeout, this, &CursorHighlight::animate);
-    CursorSettleTimer.setSingleShot(true);
-    CursorSettleTimer.setInterval(100);
-    CursorSettleTimer.setTimerType(Qt::PreciseTimer);
-    connect(&CursorSettleTimer, &QTimer::timeout, this, &CursorHighlight::ReadCursorPosition);
+    CursorFallbackTimer.setInterval(50);
+    CursorFallbackTimer.setTimerType(Qt::CoarseTimer);
+    connect(&CursorFallbackTimer, &QTimer::timeout, this, [this] { ReadCursorPosition(true); });
     clock_.start();
 }
 
@@ -175,6 +174,9 @@ void CursorHighlight::set_enabled(bool enabled) {
         cursor_events_ = SetWinEventHook(EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_LOCATIONCHANGE, nullptr, cursor_event, 0, 0, WINEVENT_OUTOFCONTEXT);
         // Where the pointer is now, before it first moves.
         on_pointer(QCursor::pos());
+        LastSystemPosition.reset();
+        ReadCursorPosition();
+        CursorFallbackTimer.start();
         return;
     }
     disconnect(moved_connection_);
@@ -184,7 +186,8 @@ void CursorHighlight::set_enabled(bool enabled) {
     if (g_cursor_listener == this) g_cursor_listener = nullptr;
     if (auto *source = hub_ ? hub_ : existing_input_hub()) source->native->unwatch_mouse(WATCHER);
     ripple_timer_.stop();
-    CursorSettleTimer.stop();
+    CursorFallbackTimer.stop();
+    LastSystemPosition.reset();
     if (view_) view_->remove_pointer_light();
 }
 
@@ -210,18 +213,20 @@ void CursorHighlight::show_at(const QPoint &global) {
 
 void CursorHighlight::on_pointer(const QPoint &global) { show_at(global); }
 
-void CursorHighlight::ReadCursorPosition() {
+void CursorHighlight::ReadCursorPosition(bool MovementOnly) {
     POINT Position{};
     // The same physical coordinates as the hook's.
-    if (enabled_ && GetCursorPos(&Position) && QPoint(Position.x, Position.y) != last_pos_)
-        on_pointer(QPoint(Position.x, Position.y));
+    if (!enabled_ || !GetCursorPos(&Position)) return;
+    const QPoint Current(Position.x, Position.y);
+    const bool Changed = !LastSystemPosition || *LastSystemPosition != Current;
+    LastSystemPosition = Current;
+    // Explicit/hub positions remain authoritative until the physical cursor
+    // actually changes. WinEvent reads can also reconcile an out-of-order hook.
+    if ((Changed || !MovementOnly) && Current != last_pos_) on_pointer(Current);
 }
 
 void CursorHighlight::on_cursor_moved() {
     if (!enabled_) return;
-    // Notifications and the queued read can interleave with rapid cursor moves.
-    // Restart one final sample after the burst, then remain idle again.
-    CursorSettleTimer.start();
     if (cursor_read_pending_) return;
     cursor_read_pending_ = true;
     QMetaObject::invokeMethod(this, [this] {

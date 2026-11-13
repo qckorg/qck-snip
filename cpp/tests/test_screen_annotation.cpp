@@ -802,6 +802,8 @@ private slots:
         stub_->button(1, false, at);
         // The rings run out by themselves, on a timer that stops with the last one.
         QTRY_COMPARE_WITH_TIMEOUT(light->ripple_count(), 0, 3000);
+        // An unchanged physical cursor must not replace the hub's supplied position.
+        QCOMPARE(light->disc_position(), QPointF(400, 300));
         // Not an annotation.
         QCOMPARE(drawing_count(view), 0);
         QVERIFY(!view->has_drawings());
@@ -908,7 +910,7 @@ private slots:
         QVERIFY(GetCursorPos(&Actual));
         QCOMPARE(QPoint(Actual.x, Actual.y), QPoint(900, 700));
         QTRY_COMPARE_WITH_TIMEOUT(view->pointer_light(false)->disc_position(), QPointF(900, 700), 3000);
-        // Leave a final sample pending, then ensure disabling cancels it.
+        // Queue a read, then ensure disabling also stops the fallback sampler.
         annotation.cursor_highlight()->on_cursor_moved();
         annotation.set_cursor_highlight(false, false);
         QTest::qWait(150);
