@@ -112,6 +112,20 @@ jobs:
         if: always() && steps.build.outcome == 'success'
         run: .\scripts\smoke_admin_task.ps1
 
+      # Exercise OCR UI against the supplied pack before parallel tests can
+      # install their own models beside the shared executables.
+      - name: OCR result-window integration
+        if: always() && steps.build.outcome == 'success'
+        run: .\scripts\coverage.ps1 -SkipBuild -TestFilter '^result_windows$'
+
+      - name: OCR result-window reports
+        if: always() && steps.build.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ocr-result-window-reports
+          path: cpp/build/coverage-build/test_reports/result_windows.txt
+          if-no-files-found: error
+
       - id: tests
         if: always() && steps.build.outcome == 'success'
         # Four at a time on the runner's four cores; the clipboard tests take turns (RESOURCE_LOCK).
