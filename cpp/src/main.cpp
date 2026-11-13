@@ -25,9 +25,13 @@ std::vector<std::string> utf8_arguments() {
 }
 
 int main(int argc, char **argv) {
+    SetErrorMode(GetErrorMode() | SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX | SEM_NOGPFAULTERRORBOX);
     if (argc > 1 && (std::string(argv[1]) == jietuba::elevation::InstallArgument || std::string(argv[1]) == jietuba::elevation::RemoveArgument)) {
-        SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX | SEM_NOGPFAULTERRORBOX);
-        return argc == 2 ? jietuba::elevation::RunTaskHelper(std::string(argv[1]) == jietuba::elevation::InstallArgument) : 1;
+        try {
+            return argc == 2 ? jietuba::elevation::RunTaskHelper(std::string(argv[1]) == jietuba::elevation::InstallArgument) : 1;
+        } catch (...) {
+            return 1; // Helper failures stay nonmodal, including allocation/Qt exceptions.
+        }
     }
     // The MP4 recording worker branches off before Qt starts.
     if (argc > 1 && std::string(argv[1]) == "--video-recorder-worker") {

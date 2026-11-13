@@ -1,3 +1,4 @@
+#include "core/platform_utils.h"
 #include "core/feature_settings.h"
 #include "core/data_location.h"
 #include "core/ocr_security.h"
@@ -17,11 +18,13 @@
 #include <QSettings>
 #include <QScopeGuard>
 #include <QProcess>
+#include <QProcessEnvironment>
 #include <QTemporaryDir>
 #include <QTcpServer>
 #include <QHostAddress>
 #include <QTest>
 #include <stdexcept>
+#include <cstdio>
 #include <windows.h>
 
 using namespace jietuba;
@@ -138,7 +141,62 @@ private slots:
             QCOMPARE(Child.exitCode(), 1); // Tests inherit the isolated sandbox; no real tasks.
         }
     }
+    void MixedPrivilegeInstanceIdentity() {
+        if (Mode != "privileged") return;
+        QProcess Owned;
+        Owned.start(QCoreApplication::applicationFilePath(), {"--QckIdentityChild"});
+        QVERIFY(Owned.waitForStarted());
+        QVERIFY(Owned.waitForReadyRead());
+        const auto Cleanup = qScopeGuard([&] { if (Owned.state() != QProcess::NotRunning) { Owned.kill(); Owned.waitForFinished(); } });
+        const auto Identity = get_process_identity(Owned.processId());
+        QVERIFY(Identity);
+        QProcess Medium;
+        auto Environment = QProcessEnvironment::systemEnvironment();
+        Environment.insert("QCK_TEST_KEEP_TOKEN", "0");
+        Medium.setProcessEnvironment(Environment);
+        const QString Launcher = QDir(QCoreApplication::applicationDirPath()).filePath("jietuba_test_launcher.exe");
+        Medium.start(Launcher, {QCoreApplication::applicationFilePath(), "--QckMatchChild", QString::number(Owned.processId()), QString::number(Identity->first)});
+        QVERIFY(Medium.waitForStarted());
+        QVERIFY(Medium.waitForFinished(10000));
+        QVERIFY2(Medium.exitCode() == 0, Medium.readAllStandardError().constData());
+        QVERIFY(TerminateInstance(Owned.processId(), Identity->first));
+        QVERIFY(Owned.waitForFinished());
+
+        QTemporaryDir Directory;
+        QVERIFY(Directory.isValid());
+        const QString OtherPath = Directory.filePath(QFileInfo(QCoreApplication::applicationFilePath()).fileName());
+        QVERIFY(QFile::copy(QStringLiteral(QCK_FAKE_INSTANCE_PATH), OtherPath));
+        QProcess Other;
+        Other.start(OtherPath, QStringList{});
+        QVERIFY(Other.waitForStarted());
+        QVERIFY(Other.waitForReadyRead());
+        const auto OtherCleanup = qScopeGuard([&] { Other.kill(); Other.waitForFinished(); });
+        const auto OtherIdentity = get_process_identity(Other.processId());
+        QVERIFY(OtherIdentity);
+        QVERIFY(!TerminateInstance(Other.processId(), OtherIdentity->first));
+        QVERIFY(!TerminateInstance(Other.processId(), std::nullopt));
+        QVERIFY(!Other.waitForFinished(50));
+    }
 };
 
-QTEST_MAIN(FeatureServiceTests)
+int main(int argc, char** argv) {
+    if (argc == 2 && QByteArray(argv[1]) == "--QckIdentityChild") {
+        std::fputs("ready\n", stdout);
+        std::fflush(stdout);
+        Sleep(30000);
+        return 0;
+    }
+    if (argc == 4 && QByteArray(argv[1]) == "--QckMatchChild") {
+        bool ValidPid = false, ValidTime = false;
+        const auto Pid = QByteArray(argv[2]).toLongLong(&ValidPid);
+        const auto Time = QByteArray(argv[3]).toULongLong(&ValidTime);
+        const bool Standard = qck::Security::CanLoadOcrRuntime();
+        const bool Matched = ValidPid && ValidTime && MatchesInstance(Pid, Time);
+        std::fprintf(stderr, "[Test:Instance] Standard=%d Matched=%d\n", int(Standard), int(Matched));
+        return Standard && Matched ? 0 : 1;
+    }
+    QApplication App(argc, argv);
+    FeatureServiceTests Tests;
+    return QTest::qExec(&Tests, argc, argv);
+}
 #include "test_feature_services.moc"

@@ -94,8 +94,9 @@ QString dirname(const QString &path) {
 // The hand-off runs before QApplication exists, when applicationFilePath() is still empty.
 QString own_exe() {
     if (test_environment().exe) return *test_environment().exe;
-    wchar_t path[MAX_PATH * 4] = {};
+    wchar_t path[32768] = {};
     const DWORD length = GetModuleFileNameW(nullptr, path, static_cast<DWORD>(std::size(path)));
+    if (!length || length >= std::size(path)) return {};
     return QString::fromWCharArray(path, static_cast<int>(length));
 }
 
@@ -130,6 +131,9 @@ std::pair<int, QByteArray> WriteTask(bool Install, const QString& Xml, bool Vali
     const HRESULT Initialized = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     if (FAILED(Initialized) && Initialized != RPC_E_CHANGED_MODE) return {static_cast<int>(Initialized), {}};
     const auto Cleanup = qScopeGuard([&] { if (SUCCEEDED(Initialized)) CoUninitialize(); });
+    const HRESULT Security = CoInitializeSecurity(nullptr, -1, nullptr, nullptr, RPC_C_AUTHN_LEVEL_PKT_PRIVACY,
+                                                 RPC_C_IMP_LEVEL_IMPERSONATE, nullptr, EOAC_NONE, nullptr);
+    if (FAILED(Security) && Security != RPC_E_TOO_LATE) return {static_cast<int>(Security), {}};
     Microsoft::WRL::ComPtr<ITaskService> Service;
     HRESULT Result = CoCreateInstance(CLSID_TaskScheduler, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&Service));
     VARIANT Empty{};
@@ -213,10 +217,11 @@ std::pair<int, QByteArray> run_schtasks_elevated_process(const QStringList &args
     if (!test_sandbox_dir().isEmpty()) return {-1, {}};
     if (args.size() != 1 || (args.first() != "/Create" && args.first() != "/Delete")) return {-1, {}};
     const std::wstring Program = own_exe().toStdWString();
+    if (Program.empty()) return {-1, {}};
     const std::wstring parameters = QString::fromLatin1(args.first() == "/Create" ? InstallArgument : RemoveArgument).toStdWString();
     SHELLEXECUTEINFOW info{};
     info.cbSize = sizeof(info);
-    info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
+    info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC | SEE_MASK_FLAG_NO_UI;
     info.lpVerb = L"runas";
     info.lpFile = Program.c_str();
     info.lpParameters = parameters.c_str();
@@ -238,9 +243,11 @@ bool run_self_elevated_process() {
     if (!qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup)) return false;
     if (!test_sandbox_dir().isEmpty()) return false;
     const std::wstring exe = own_exe().toStdWString();
+    if (exe.empty()) return false;
     const std::wstring directory = dirname(own_exe()).toStdWString();
     SHELLEXECUTEINFOW info{};
     info.cbSize = sizeof(info);
+    info.fMask = SEE_MASK_NOASYNC | SEE_MASK_FLAG_NO_UI;
     info.lpVerb = L"runas";
     info.lpFile = exe.c_str();
     info.lpDirectory = directory.c_str();
@@ -270,7 +277,7 @@ int RunTaskHelper(bool Install) {
     const bool Allowed = GetTokenInformation(Token, TokenElevation, &Elevated, sizeof(Elevated), &Length) && Elevated.TokenIsElevated;
     CloseHandle(Token);
     if (!Allowed || !qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup) || !test_sandbox_dir().isEmpty()) return 1;
-    return WriteTask(Install, build_task_xml(own_exe(), user_name())).first == 0 ? 0 : 1;
+    return WriteTask(Install, build_task_xml(own_exe(), user_name())).first;
 }
 
 void set_elevated_schtasks_runner_for_test(SchtasksRunner runner) { test_elevated_runner() = std::move(runner); }

@@ -33,6 +33,8 @@ No sustained local application build or desktop tests were run.
   when the CI host is elevated. A separately opted-in elevated-host probe checks
   prepopulated Snipping caches, direct construction and the PP-OCR C ABI before
   native loading. The probe never creates a scheduled task.
+  Its controlled child processes also check medium-to-high identity queries,
+  legitimate replacement, and rejection of a different same-name executable.
 - **Administrator setup:** `scripts/smoke_admin_task.ps1` uses the real fixed helper
   on a disposable GitHub-hosted elevated runner. It registers, reads back and
   removes only its own previously absent task, checks command/account/settings,

@@ -356,11 +356,11 @@ private slots:
     void ForgedInstanceRecordsCannotTerminateAnotherImage() {
         QTemporaryDir CopyDirectory;
         const QString CopyPath = CopyDirectory.filePath(QFileInfo(QCoreApplication::applicationFilePath()).fileName());
-        const QString Ping = QDir(qEnvironmentVariable("WINDIR")).filePath("System32/ping.exe");
-        QVERIFY(QFile::copy(Ping, CopyPath));
+        QVERIFY(QFile::copy(QStringLiteral(QCK_FAKE_INSTANCE_PATH), CopyPath));
         QProcess Other;
-        Other.start(CopyPath, {"-n", "30", "127.0.0.1"});
+        Other.start(CopyPath, QStringList{});
         QVERIFY(Other.waitForStarted());
+        QVERIFY(Other.waitForReadyRead());
         const auto Cleanup = qScopeGuard([&] { Other.kill(); Other.waitForFinished(); });
         const auto Identity = get_process_identity(Other.processId());
         QVERIFY(Identity);

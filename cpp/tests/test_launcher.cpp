@@ -4,6 +4,7 @@
 // No Qt: it must start even when the Qt DLLs are what is missing.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <cstdio>
 
 namespace {
 // The command line after this program's own path, with the test's quoting intact.
@@ -58,8 +59,9 @@ int wmain() {
     } else {
         Started = CreateProcessW(nullptr, command, nullptr, nullptr, TRUE, CREATE_SUSPENDED, nullptr, nullptr, &startup, &process);
     }
+    const DWORD StartError = Started ? ERROR_SUCCESS : GetLastError();
     CloseHandle(Token);
-    if (!Started) return 3;
+    if (!Started) { std::fprintf(stderr, "[Test:Host] Process creation failed: %lu\n", StartError); return 3; }
     if (job) AssignProcessToJobObject(job, process.hProcess);
     ResumeThread(process.hThread);
     CloseHandle(process.hThread);
