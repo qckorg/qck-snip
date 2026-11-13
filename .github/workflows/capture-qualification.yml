@@ -1,0 +1,81 @@
+name: Capture qualification package
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [qualification/capture-release-a5ad357]
+    paths: [.github/workflows/capture-qualification.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: powershell
+        working-directory: cpp
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+      CARGO_BUILD_JOBS: 2
+    steps:
+      # The workflow branch is packaging orchestration only. Build the exact
+      # merged application source, not the workflow branch's mutable head.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: a5ad357e99aa9a77b14c6910f6ac18a31d5d743d
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+      - id: qt
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: cpp/.sdk/6.11.0/msvc2022_64
+          key: qt-6.11.0-x64-${{ hashFiles('cpp/scripts/install_qt.py') }}
+      - if: steps.qt.outputs.cache-hit != 'true'
+        run: |
+          python -m pip install py7zr
+          if ($LASTEXITCODE) { throw '[Build:Capture] Archive dependency installation failed.' }
+          python scripts\install_qt.py
+          if ($LASTEXITCODE) { throw '[Build:Capture] Qt SDK installation failed.' }
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          workspaces: cpp/native -> ../build/msvc/native
+          key: capture-release-x64
+      - name: Optimized Capture build, tests and deployment
+        run: .\scripts\build.ps1 -FeatureProfile Capture -Configuration Release -NoUpdates
+      - name: Record provenance
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $Source = (git rev-parse HEAD).Trim()
+          if ($Source -ne 'a5ad357e99aa9a77b14c6910f6ac18a31d5d743d') { throw '[Build:Capture] Wrong application source.' }
+          $Manifest = [ordered]@{
+            SourceCommit = $Source
+            Profile = 'Capture'
+            Configuration = 'Release'
+            Architecture = 'x64'
+            Instrumented = $false
+            Ocr = $false
+            Translation = $false
+            ClipboardHistory = $false
+            AdministratorStartup = $false
+            Updates = $false
+            ExeSha256 = (Get-FileHash -LiteralPath 'dist\Release\qck-snip.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
+          }
+          $Manifest | ConvertTo-Json | Set-Content -LiteralPath 'dist\Release\BuildManifest.json' -Encoding UTF8
+          Get-Content -LiteralPath 'dist\Release\BuildManifest.json'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qck-snip-Capture-Release-x64-a5ad357
+          path: cpp/dist/Release/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: capture-release-test-reports
+          path: |
+            cpp/build/msvc/test_reports/
+            cpp/build/msvc/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
