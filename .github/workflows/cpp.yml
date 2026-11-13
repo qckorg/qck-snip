@@ -103,8 +103,12 @@ jobs:
         if: steps.scope.outputs.code == 'true'
         run: .\scripts\coverage.ps1 -BuildOnly -PrivilegedHost
 
+      - name: Administrator task registration smoke check
+        if: always() && steps.build.outcome == 'success'
+        run: .\scripts\smoke_admin_task.ps1
+
       - id: tests
-        if: steps.scope.outputs.code == 'true'
+        if: always() && steps.build.outcome == 'success'
         # Four at a time on the runner's four cores; the clipboard tests take turns (RESOURCE_LOCK).
         run: .\scripts\coverage.ps1 -SkipBuild -Jobs 4 -TestExclude '_desktop$|_windows_parity$'
 

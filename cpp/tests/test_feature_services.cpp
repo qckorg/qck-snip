@@ -18,6 +18,8 @@
 #include <QScopeGuard>
 #include <QProcess>
 #include <QTemporaryDir>
+#include <QTcpServer>
+#include <QHostAddress>
 #include <QTest>
 #include <stdexcept>
 #include <windows.h>
@@ -91,9 +93,12 @@ private slots:
         QVERIFY_EXCEPTION_THROWN(prepare_snipping_tool_files({"disabled", "missing"}), std::runtime_error);
         QVERIFY(!updater_bundled());
         QVERIFY_EXCEPTION_THROWN(helper_path(), std::runtime_error);
-        const auto Response = http_request("POST", "http://127.0.0.1:1/", {}, "private text", 0.1);
+        QTcpServer Server;
+        QVERIFY(Server.listen(QHostAddress::LocalHost));
+        const auto Response = http_request("POST", QString("http://127.0.0.1:%1/").arg(Server.serverPort()), {}, "private text", 0.1);
         QCOMPARE(Response.kind, HttpResponse::NetworkError);
-        QVERIFY(Response.reason.contains("disabled"));
+        QCOMPARE(Response.reason, QString("Translation disabled by feature policy"));
+        QVERIFY(!Server.waitForNewConnection(100));
         auto* Translation = TranslationManager::instance();
         Translation->translate("private text");
         QVERIFY(!Translation->is_dialog_open());
@@ -121,7 +126,7 @@ private slots:
         QVERIFY(!qck::FeatureSettings::IsEnabled(qck::Feature::Ocr));
     }
     void FixedHelperArgumentsNeverOpenTheDesktop() {
-        const QString Program = QDir(QCoreApplication::applicationDirPath()).filePath("qck-snip.exe");
+        const QString Program = QDir(QCoreApplication::applicationDirPath()).filePath(QCK_TEST_APP_NAME);
         QVERIFY(QFile::exists(Program));
         for (const QStringList Arguments : {QStringList{"--qck-install-admin-task"}, QStringList{"--qck-remove-admin-task"},
                                             QStringList{"--qck-install-admin-task", "--xml", "untrusted.xml"}}) {

@@ -6,6 +6,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <stdexcept>
+#include <iterator>
 #include <windows.h>
 
 using namespace jietuba;
@@ -68,6 +69,21 @@ private:
     }
 
 private slots:
+    void LoadingPreservesTheProcessDllDirectory() {
+        wchar_t Before[32768]{}, After[32768]{};
+        GetDllDirectoryW(static_cast<DWORD>(std::size(Before)), Before);
+        const auto Package = package(FULL);
+        QVERIFY(!Package.first.isEmpty());
+        SnippingToolOcr Engine(Package);
+        const auto Path = QDir::toNativeSeparators(QDir(snipping_tool_cache_root()).filePath(Package.first + "/oneocr.dll")).toStdWString();
+        HMODULE Module = GetModuleHandleW(Path.c_str());
+        QVERIFY(Module);
+        const auto Probe = reinterpret_cast<const wchar_t*(*)()>(GetProcAddress(Module, "FakeDllDirectory"));
+        QVERIFY(Probe);
+        QCOMPARE(QString::fromWCharArray(Probe()), QString::fromWCharArray(Before));
+        GetDllDirectoryW(static_cast<DWORD>(std::size(After)), After);
+        QCOMPARE(QString::fromWCharArray(After), QString::fromWCharArray(Before));
+    }
     void initTestCase() { QVERIFY(packages_.isValid()); }
 
     void aLineLimitIsSetWhenTheEngineExportsIt() {

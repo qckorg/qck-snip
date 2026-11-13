@@ -1,6 +1,7 @@
 #include "core/data_location.h"
 #include "settings/data_folder.h"
 #include "core/elevation.h"
+#include "core/feature_settings.h"
 #include "core/i18n.h"
 #include "core/resource_manager.h"
 #include "ocr/ocr_manager.h"
@@ -434,9 +435,19 @@ private slots:
         const auto restore = qScopeGuard([this] {
             elevation::set_environment_for_test(std::nullopt, std::nullopt, std::nullopt);
             elevation::set_schtasks_runner_for_test({});
+            elevation::SetTaskWriterForTest({});
             config_->set_app_setting("run_as_admin", false);
             config_->set_app_setting("autostart_enabled", true);
         });
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup)) {
+            for (const auto& State : {elevation::STANDARD, elevation::CAN_ELEVATE, elevation::ELEVATED}) {
+                elevation::set_environment_for_test(std::nullopt, State, std::nullopt);
+                SettingsDialog Dialog(config_, config_->get_hotkey());
+                Dialog.build_all_pages();
+                QVERIFY(!Dialog.has_attr("run_as_admin_toggle"));
+            }
+            return;
+        }
         elevation::set_environment_for_test(std::nullopt, elevation::STANDARD, std::nullopt);
         {
             SettingsDialog dialog(config_, config_->get_hotkey());
@@ -444,6 +455,10 @@ private slots:
             QVERIFY(!dialog.has_attr("run_as_admin_toggle"));
         }
         QStringList calls;
+        elevation::SetTaskWriterForTest([&calls](bool Install, const QString&) {
+            calls << (Install ? "/Create" : "/Delete");
+            return std::pair<int, QByteArray>{0, {}};
+        });
         elevation::set_schtasks_runner_for_test([&calls](const QStringList &args) {
             calls << args.value(0);
             return std::pair<int, QByteArray>{0, {}};

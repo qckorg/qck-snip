@@ -102,7 +102,13 @@ if ($LASTEXITCODE -ne 0) { throw 'CMake configuration failed.' }
 & $cmake --build $buildDir --config $Configuration --parallel
 if ($LASTEXITCODE -ne 0) { throw 'Compilation failed.' }
 if (-not $SkipTests -and -not $Static) {
-    & $ctest --test-dir $buildDir -C $Configuration --output-on-failure
+    $TestArguments = @('--test-dir', $buildDir, '-C', $Configuration, '--output-on-failure')
+    if ($FeatureProfile -eq 'Capture') {
+        # Feature-dependent behavior is qualified by the enabled integration matrix.
+        # This profile asserts unavailable services, retained pure contracts and direct copy.
+        $TestArguments += @('-R', '^qck_feature_policy$|^qck_features_|^python_core_parity$|^updater$')
+    }
+    & $ctest @TestArguments
     if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
 }
 $exeName = (Select-String -LiteralPath $cache -Pattern '^JIETUBA_EXE_NAME:INTERNAL=(.+)$').Matches[0].Groups[1].Value + '.exe'

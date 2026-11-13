@@ -160,11 +160,11 @@ SnippingToolOcr::SnippingToolOcr(const std::pair<QString, QString> &package) {
     const auto check = [](int64_t result, const char *message) {
         if (result != 0) throw std::runtime_error(QString("%1 (Code: %2)").arg(message).arg(result).toStdString());
     };
-    // The engine finds its dependencies through the DLL directory, which is process-wide;
-    // its dependencies are loaded once the engine exists, so the default order comes back.
-    SetDllDirectoryW(files_dir.toStdWString().c_str());
+    // Scope dependency lookup to this load. A process-wide DLL directory would
+    // also affect concurrent operations and child processes started during OCR.
     try {
-        auto *module = LoadLibraryW(QDir(files_dir).filePath("oneocr.dll").toStdWString().c_str());
+        auto *module = LoadLibraryExW(QDir(files_dir).filePath("oneocr.dll").toStdWString().c_str(), nullptr,
+                                     LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
         if (!module) throw std::runtime_error("DLL initialization failed");
         dll_ = module;
         api_ = new Api;
@@ -200,11 +200,9 @@ SnippingToolOcr::SnippingToolOcr(const std::pair<QString, QString> &package) {
         check(api_->create_process_options(&process_options_), "Process options creation failed");
         if (api_->set_max_line_count) check(api_->set_max_line_count(process_options_, 1000), "Line count config failed");
     } catch (...) {
-        SetDllDirectoryW(nullptr);
         close();
         throw;
     }
-    SetDllDirectoryW(nullptr);
 }
 
 SnippingToolOcr::~SnippingToolOcr() { close(); }

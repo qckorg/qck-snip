@@ -32,8 +32,9 @@ only when it crosses a meaningful boundary, such as higher integrity. Explicitly
 state optional elevation and consent requirements. Do not equate a dangerous API,
 mutable upstream reference or user-selected endpoint with a demonstrated exploit.
 
-The brief records three unresolved inherited administrator-related findings.
-Default-off gates mitigate routes; they do not close those findings. External
+The brief records three inherited administrator-related findings and their
+remediation boundaries. Require their regressions and the application matrix to
+pass before declaring them fixed. Default-off flags alone do not close findings. External
 compiler/release provenance, runtime ACLs and unexecuted tests are unknowns.
 No owner-approved suppressions, exclusions or accepted-risk decisions have been
 established. Contact maintainers privately for sensitive reports; no private

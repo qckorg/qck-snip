@@ -2,6 +2,8 @@
 #include "core/bootstrap.h"
 #include "core/constants.h"
 #include "core/elevation.h"
+#include "core/feature_settings.h"
+#include "core/platform_utils.h"
 #include "core/global_hotkey.h"
 #include "core/i18n.h"
 #include "core/logger.h"
@@ -99,6 +101,16 @@ void write_record(const QString &path, const QByteArray &content) {
 class CoreTests : public QObject {
     Q_OBJECT
     QJsonObject fixtures_;
+    void CheckAdminRefusal() {
+        ElevationFixture Fixture(elevation::ELEVATED);
+        QVERIFY(!elevation::install_task());
+        QVERIFY(!elevation::run_task());
+        QVERIFY(!elevation::run_self_elevated());
+        QVERIFY(!hand_off_to_admin_task(1, 1));
+        QVERIFY(!elevation::apply_startup(true, true, false, true));
+        QVERIFY(Fixture.fake->calls.isEmpty());
+        QVERIFY(Fixture.fake->elevated_calls.isEmpty());
+    }
 private slots:
     void initTestCase() {
         QFile file(JIETUBA_CORE_FIXTURE_PATH);
@@ -182,6 +194,7 @@ private slots:
         }
     }
     void ElevationInstallRegistersInMemory() {
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup)) { CheckAdminRefusal(); return; }
         ElevationFixture fixture(elevation::ELEVATED);
         const QString LegacyPath = QDir::temp().filePath(QString("jietuba_task_%1.xml").arg(QCoreApplication::applicationPid()));
         write_record(LegacyPath, "attacker-controlled definition");
@@ -221,6 +234,7 @@ private slots:
         QVERIFY(!elevation::remove_task());
     }
     void elevationOnlyUnelevatedChangesAskForUac() {
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup)) { CheckAdminRefusal(); return; }
         for (const auto &[state, elevated] : {std::pair{elevation::ELEVATED, false}, std::pair{elevation::CAN_ELEVATE, true}}) {
             ElevationFixture fixture(state);
             QVERIFY(elevation::install_task());
@@ -232,6 +246,7 @@ private slots:
     }
     // The return value is whether admin mode is in effect.
     void elevationApplyStartup() {
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup)) { CheckAdminRefusal(); return; }
         {
             ElevationFixture fixture(elevation::ELEVATED);
             QVERIFY(elevation::apply_startup(true, true, false));
@@ -276,6 +291,7 @@ private slots:
     }
     // Applying again with the task already running this program changes nothing and asks nothing.
     void elevationApplyStartupLeavesAWorkingTask() {
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup)) { CheckAdminRefusal(); return; }
         ElevationFixture fixture(elevation::CAN_ELEVATE);
         fixture.fake->command = EXE;
         QVERIFY(elevation::apply_startup(true, true, true, true));
@@ -296,6 +312,7 @@ private slots:
         QVERIFY(!elevation::task_is_stale(QCoreApplication::applicationFilePath()));
     }
     void elevationRepairPointsAStaleTaskAtThisProgram() {
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup)) { CheckAdminRefusal(); return; }
         {
             ElevationFixture fixture(elevation::ELEVATED);
             fixture.fake->command = GONE;
@@ -321,6 +338,7 @@ private slots:
         QVERIFY(fixture.fake->elevated_calls.isEmpty());
     }
     void elevationHandOff() {
+        if (!qck::FeatureSettings::IsEnabled(qck::Feature::AdminStartup)) { CheckAdminRefusal(); return; }
         QTemporaryDir dir;
         const QString record = dir.filePath("jietuba_lite.exe.pid");
         QProcess Child;

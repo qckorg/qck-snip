@@ -27,20 +27,31 @@ binaries were not independently authenticated. No exploits were executed.
   was found. Installed toolchains, CI hosts and downloaded SDK tools remain external
   trust anchors; source stars do not establish their integrity.
 
-## Inherited findings
+## Initial findings and remediation boundaries
 
-These remain source-level findings, not demonstrated host compromises.
+The original findings were source-level, not demonstrated host compromises.
+The following mechanisms are implemented in this branch. Closure requires their
+regressions and the required application checks to pass for the proposed head;
+see the [qualification record](QUALIFICATION.md) and linked PR results.
 
 | Finding | Impact and prerequisites | Foundation status |
 |---|---|---|
-| OCR cache accepted on file presence before native loading | Same-user code could prepopulate a cache later loaded by elevated OCR | Not fixed. Admin startup default-disabled; manual elevation still exposes the condition |
-| Editable instance record treated as identity | Elevated startup could terminate an unrelated process | Not fixed. Replace with secured single-instance IPC/retained verified handles |
-| Closed user-temp task XML passed across UAC | Same-user code could substitute an elevated scheduled command during legitimate consent | Not fixed. Default admin-startup gate blocks the normal setup route |
+| OCR cache accepted on file presence before native loading | Same-user code could prepopulate a cache later loaded by elevated OCR | Mandatory token/integrity checks before Snipping native loading and Rust PP-OCR runtime/init/open; no elevated OCR |
+| Editable instance record treated as identity | Elevated startup could terminate an unrelated process | Full executable path, same account and optional creation time checked on the retained termination handle; overflow rejected; handoff also checks identity |
+| Closed user-temp task XML passed across UAC | Same-user code could substitute an elevated scheduled command during legitimate consent | Fixed install/remove self helper derives its own executable/account and registers the definition through Task Scheduler COM in memory; no XML file crosses UAC |
 
 The first two have high confidence in source dataflow; the XML finding has medium
 confidence because timing and actual temporary-file ACLs were not exercised.
 All were calibrated Medium overall due to local attacker and conditional elevation
 prerequisites. No unauthenticated remote execution path was established.
+
+Both OCR backends require an ordinary, non-elevated host independently of feature
+settings. Administrative capture has no OCR; supporting both together requires a
+separate standard-user OCR worker. This is a security restriction, not proof that
+normal-user caches are authenticated. Snipping dependencies use per-load lookup
+instead of changing the process-wide DLL directory, which would also affect
+[child-process DLL search](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-setdlldirectorya).
+Remaining release/compiler provenance work is separate from these local boundary fixes.
 
 ## Required properties
 

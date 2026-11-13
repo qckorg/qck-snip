@@ -1,63 +1,74 @@
-# Architecture-foundation qualification
+# Build and security qualification
 
-Baseline: upstream `4c0d20f9cd7a5720df58ec8426aa4b6a65d54df7`.
-This record covers the initial QCK policy/source foundation, not a desktop release.
-No upstream application or dependency implementation was removed.
+This record distinguishes the initial foundation checks from the required PR
+qualification. The exact validated head, run links and results are recorded in
+[the PR](https://github.com/qckorg/qck-snip/pull/1) and its CI checks. A required
+matrix describes the checks to execute; it does not itself assert a pass.
 
-## Executed locally
+## Initial foundation evidence
 
-Toolchain: installed Visual Studio 18 / MSVC 19.50.35728.0, Windows SDK 10.0.26100.0.
-Only the tiny Qt-free policy library and check executable were compiled locally,
-with parallelism 2. No sustained full native build was started.
+Upstream baseline: `4c0d20f9cd7a5720df58ec8426aa4b6a65d54df7`.
+The Qt-free policy library passed three local Release configurations: 58 assertions
+each, 174 total, with zero failures or skipped CTests. A malformed CMake boolean
+was rejected. PowerShell parsing, documentation links and diff checks also passed.
 
-| Check | Pass | Fail | Scope |
-|---|---:|---:|---|
-| Policy CTest, default availability | 1 | 0 | 58 internal assertions |
-| Policy CTest, OCR/translation/history unavailable | 1 | 0 | 58 internal assertions |
-| Policy CTest, all capabilities available | 1 | 0 | 58 internal assertions |
-| Invalid CMake boolean rejected | 1 | 0 | Configure must fail for `QCK_ENABLE_OCR=garbage` |
+The initial local full-app configure lacked the Qt6 C++ SDK. The first hosted CI
+run subsequently compiled the full application and passed Rust on x64 and ARM64,
+but failed retained C++ tests, including stale fork-identity expectations and
+assumptions that admin startup and updates were available. That run was not an
+application pass. These results do not imply the security patches were qualified.
 
-The three policy configurations total 174 passing assertions, zero failed
-assertions and zero skipped CTests. Coverage includes default configuration,
-stable IDs, unknown/malformed switches, noninterference, dependency combinations,
-invalid enum handling and settings being unable to override build availability.
-These counts do not include unexecuted application tests.
+The security change also compiled the small Windows OCR host guard and native
+test launcher with MSVC locally; the ordinary-host control returned NativeAllowed=1.
+No sustained local application build or desktop tests were run.
 
-PowerShell build-wrapper syntax parsing, `git diff --check`, local documentation
-link validation and the SECURITY.md resolver are additional static checks.
-The root policy resolves for `cpp/src/core`; there are no nested policy overrides.
+## Required PR matrix
 
-## Blocked and unverified
+- **Policy:** default, capture and all-capability CMake presets, with Release CTest.
+- **Full C++:** `scripts/coverage.ps1 -BuildOnly -PrivilegedHost`, then the full
+  offscreen suite with four test workers. Optional service availability is enabled
+  so retained enabled behavior remains exercised; production defaults remain off
+  for administrator startup and updates.
+- **Privileges:** the launcher runs ordinary tests with a restricted medium token
+  when the CI host is elevated. A separately opted-in elevated-host probe checks
+  prepopulated Snipping caches, direct construction and the PP-OCR C ABI before
+  native loading. The probe never creates a scheduled task.
+- **Administrator setup:** `scripts/smoke_admin_task.ps1` uses the real fixed helper
+  on a disposable GitHub-hosted elevated runner. It registers, reads back and
+  removes only its own previously absent task, checks command/account/settings,
+  and cleans up on failure. Ordinary Qt tests retain the sandbox prohibition.
+- **Desktop:** a 1920x1080 hosted display, serialized `_desktop`/`_windows_parity`
+  suites, and mandatory failure status. The previous soft-failure allowance is
+  removed. Existing assertions and the 77% total / 75% changed-line coverage gates
+  remain enforced.
+- **Capture:** `scripts/check_capture_profile.ps1` rebuilds the application, policy,
+  service, core and updater test targets with all five capabilities unavailable.
+  It checks configuration cannot enable them, no history database/monitor starts,
+  no translation request reaches a loopback listener, and direct PNG clipboard
+  publication still works. Core/updater cases assert refusal in this configuration;
+  their original enabled cases run in the full integration configuration.
+- **Rust:** retained workspace tests, third-party notices and independent updater
+  builds on both x64 and ARM64. The C++ build also compiles the dynamic PP-OCR bridge.
 
-A network-disconnected full-app configure probe stopped at `find_package(Qt6)`:
-no Qt6 C++ SDK/configuration was available to that build. It did not fetch or
-execute third-party build configuration. This is a blocked prerequisite, not a
-passing application build. The remote worker was reachable, but a sustained
-build/toolchain installation was not started.
+The ordinary Compatible build runs its retained suite. Capture selects the policy,
+service, core and updater contracts that apply when optional implementations are
+unavailable; enabled feature behavior is qualified separately by the full matrix.
+The elevated-host probe is explicit, so ordinary developer coverage needs no UAC.
 
-Not run: full application compilation, retained upstream suites, Qt QSettings
-round trips/import/export, service initialization/worker side-effect tests,
-desktop selection/copy, shutdown, administrator behavior, updater packaging,
-Rust updater tests, sanitizer/static-analysis suites or memory benchmarks.
-No application was launched and no user clipboard, settings or scheduled tasks
-were modified during qualification.
+## Interpretation and remaining limits
 
-Service gates, cache isolation and UI wiring received source review only. We do
-not claim that pure policy tests verify their runtime behavior. Inherited tests
-still contain upstream product/data-path assumptions and require explicit fork
-compatibility updates; do not skip or loosen them to declare an application pass.
-The inherited privileged vulnerabilities remain open; default-disabled admin
-startup is mitigation, not proof of a fix.
+Merge requires green checks for the proposed head, not just policy success or an
+older run. Record actual failures and prerequisite skips; never count unexecuted
+or skipped cases as verified. Real Snipping package tests can lack the Microsoft
+Store package on hosted Windows; stand-in DLL tests and the supplied PP-OCR pack
+exercise the corresponding normal load/recognition paths.
 
-## Next qualification gate
+OCR is intentionally unavailable in elevated/high-integrity or unqueryable hosts.
+Using OCR with administrative capture would require a separate non-elevated OCR
+worker. No elevated native-cache authenticity claim is made.
 
-Provide an MSVC-compatible Qt SDK and Rust on the bounded remote worker, capture
-the retained application's baseline, then qualify the Compatible and Capture
-profiles with Qt integration tests before merging/releasing. Specifically verify
-no OCR DLL loading, translation HTTP request or history database/monitor startup
-when disabled; check malformed INI behavior, settings import persistence, direct
-copy independence, restart/shutdown and product-data isolation.
-
-Fork CI adds a dependency-free policy matrix. Existing upstream workflows and
-tests remain present; their release/package identity contracts have not yet been
-ported or qualified for QCK publication.
+The real task smoke does not exercise a human UAC consent dialog; fake runners
+cover consent cancellation and fallback, while the fixed elevated entry point is
+exercised directly. Release signing, updater package publication/provenance,
+external compiler certification, RAM/latency benchmarking and sanitizer campaigns
+are separate qualification work. No release package is claimed qualified here.

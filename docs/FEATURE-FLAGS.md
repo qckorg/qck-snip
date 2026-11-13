@@ -53,8 +53,10 @@ Do not log arbitrary keys or values.
 `scripts/build.ps1 -FeatureProfile Compatible` preserves OCR/translation/history.
 `-FeatureProfile Capture` makes those three unavailable. Both retain the code;
 neither claims a smaller binary or lower measured memory. Admin startup stays OFF
-in the build wrapper. Expert direct CMake builds can enable it, but the security
-brief's unresolved findings still apply.
+in the build wrapper. Expert direct CMake builds can enable it. A separate fixed
+security gate prevents both Snipping and PP-OCR native runtime loading in an
+elevated/high-integrity or unqueryable host. Settings and build flags cannot
+override it; elevated capture has no OCR until a separate standard-user worker is added.
 
 `-Updates` explicitly enables both `QCK_ENABLE_UPDATES` and legacy
 `JIETUBA_UPDATES` helper bundling. Static builds no longer implicitly bundle an

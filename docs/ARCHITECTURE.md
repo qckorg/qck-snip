@@ -13,7 +13,9 @@ canvas/selection/annotation, then `core/clipboard_utils.cpp` for direct copy/sav
 History instead uses `clipboard/core/manager.cpp` and the Rust SQLite backend.
 Disabling history does not disable direct copy or pinning the system clipboard image.
 
-OCR uses `OCRManager` and copied Snipping Tool DLLs or PP-OCR/ONNX. Translation
+OCR uses `OCRManager` and copied Snipping Tool DLLs or PP-OCR/ONNX. Both dynamic
+backends refuse elevated/high-integrity hosts at their native load boundary,
+independently of settings. The PP-OCR Rust loader/open path enforces this too. Translation
 uses `TranslationManager`, workers/providers and WinHTTP. Image translation needs
 OCR and translation; text translation does not require OCR or history. Recording
 uses GIF/native Rust components or a separate MP4 worker. Updates/models use
@@ -57,6 +59,10 @@ Use interfaces at actual ownership/platform boundaries. Do not add a DI containe
 event bus or remote flag service. Keep upstream source paths, C ABI and crate names
 so upstream fixes stay reviewable.
 
-Admin startup and updater execution are default-disabled, not removed. This
-mitigates exposure; it does not fix the inherited flaws or prevent a manual
-elevated launch of the whole application.
+Admin startup and updater execution are default-disabled, not removed. Fixed
+security checks are separate: instance replacement validates full image/account
+and creation time on the handle it terminates; task setup uses a fixed elevated
+self helper and an in-memory Task Scheduler definition. No caller-supplied XML,
+path, account or task name crosses that helper boundary. Manual elevation cannot
+bypass the native OCR guard. Supporting OCR alongside administrative capture
+would require a separate non-elevated worker.

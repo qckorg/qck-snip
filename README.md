@@ -7,8 +7,9 @@ services and presentation incrementally. Existing feature implementations remain
 This foundation is source work, not a qualified desktop release. Capture,
 annotation, scrolling, pinning and recording remain in the legacy application.
 OCR, translation and clipboard history remain enabled by default. Administrator
-startup and application updates require explicit build opt-in while their
-inherited security paths and fork release packaging remain unqualified.
+startup and application updates require explicit build opt-in. Fork release
+packaging remains unqualified. OCR runtimes require a non-elevated process,
+independently of feature flags; admin mode therefore has no OCR.
 
 - [Engineering invariants](docs/INVARIANTS.md)
 - [Architecture and migration sequence](docs/ARCHITECTURE.md)
@@ -44,6 +45,9 @@ The upstream Qt/MSVC/Rust prerequisites still apply. From `cpp/`:
 The output is `qck-snip.exe` (`qck-snip-full.exe` for the Full variant).
 Disabled services are guarded; their dependencies are not yet stripped and no RAM
 reduction is claimed. See the qualification record before running a build.
+Compatible runs the retained suite; Capture runs policy/service/instance/updater
+contracts for unavailable capabilities. CI separately exercises enabled services,
+the real task helper, mandatory desktop tests and the Capture build.
 
 ## Separate fork data
 
